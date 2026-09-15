@@ -2,7 +2,7 @@
 # Docs: https://render.com/docs/blueprint-spec
 services:
   - type: web
-    name: vpn-master-api
+    name: VPN-Master-BE
     runtime: node
     plan: starter
     branch: main
