@@ -86,6 +86,18 @@ with the node, not in this repo.
 - Terms & Privacy URLs (`TERMS_URL` / `PRIVACY_URL`)
 - Data caps via `/config`
 
+## TODO / operational notes
+
+- [ ] **Postgres is on Render's free tier — free databases are deleted after 30
+      days.** Before relying on it for anything real, upgrade `vpn-master-db` to a
+      paid instance (or recreate + re-run migrations). Data is lost on expiry.
+- [ ] Set real `TERMS_URL` / `PRIVACY_URL` (Settings + onboarding links).
+- [ ] Rotate `API_KEYS` / `JWT_SECRET` off any values shared during setup.
+- [ ] Stand up at least one real WireGuard node + agent and flip its `servers`
+      row to `provisioner='agent'` (see "Deploying a real WireGuard node").
+- [ ] Have the iOS client adopt `POST /devices` + `Authorization: Bearer` so
+      quota is per-device, not per-keypair (closes the fresh-quota-on-new-key gap).
+
 ## Layout
 
 ```
