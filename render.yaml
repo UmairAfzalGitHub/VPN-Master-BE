@@ -1,0 +1,43 @@
+# Render blueprint. Connect the `main` branch for production.
+# Docs: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: vpn-master-api
+    runtime: node
+    plan: starter
+    branch: main
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PGSSL
+        value: "true"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: vpn-master-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: API_KEYS
+        generateValue: true   # the app's X-API-Key (copy into APIConfiguration)
+      - key: NODE_AGENT_SECRET
+        generateValue: true   # shared with each node agent
+      - key: CORS_ORIGIN
+        value: "*"
+      - key: FREE_LIMIT_BYTES
+        value: "1073741824"
+      - key: PREMIUM_LIMIT_BYTES
+        value: "107374182400"
+      - key: PEER_TTL_MINUTES
+        value: "30"
+      - key: TERMS_URL
+        sync: false
+      - key: PRIVACY_URL
+        sync: false
+
+databases:
+  - name: vpn-master-db
+    plan: basic-256mb
+    postgresMajorVersion: "16"
