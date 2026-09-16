@@ -109,8 +109,12 @@ with the node, not in this repo.
 - [x] Have the iOS client adopt `POST /devices` + `Authorization: Bearer` so
       quota is per-device, not per-keypair — done; verified usage accumulates
       across a WireGuard key rotation on `us-nyc-01`.
-- [ ] Restrict the node agent's TCP port to the control plane and put it behind
-      TLS (`X-Agent-Secret` currently travels over plain HTTP).
+- [x] Restrict the node agent's TCP port to the control plane — done:
+      `us-nyc-01` firewalls 8080 to Render's outbound ranges via an nftables
+      `portfilter` table (see `node-agent/README.md`).
+- [ ] Put the node agent behind TLS (`X-Agent-Secret` still travels over plain
+      HTTP; terminate TLS with a reverse proxy + DNS name, switch `agent_url` to
+      `https://`).
 
 ## Layout
 

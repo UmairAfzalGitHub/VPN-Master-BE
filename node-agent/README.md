@@ -120,14 +120,69 @@ quotes would become part of the value and break auth.
   passed to `wg` via `execFileSync` (no shell) — no command injection.
 - PSKs are written to a `0600` temp file (never a shell arg) and unlinked.
 - Peers persist across reboot via `wg-quick save`.
-- **Expose only what's needed:** the firewall should allow UDP 51820
-  (WireGuard) to the world, but restrict TCP `AGENT_PORT` (8080) to the control
-  plane, and put it behind TLS. The `X-Agent-Secret` currently travels over
-  plain HTTP if `agent_url` is `http://`.
+- **Control port is locked to the control plane (done):** TCP `AGENT_PORT`
+  (8080) is firewalled to Render's outbound IP ranges; UDP 51820 (WireGuard)
+  stays open to the world. See "Restricting the control port" below.
+- **Still over plain HTTP (TODO):** the `X-Agent-Secret` travels unencrypted if
+  `agent_url` is `http://`. Terminate TLS in front of the agent (e.g. a Caddy
+  reverse proxy with a DNS name) and switch `agent_url` to `https://`.
 - Inputs are also passed to `nft` via `execFileSync` argv arrays (no shell), so
   the quota path carries no command-injection surface either.
 - **In-kernel quota enforcement is live** (see the section above) — the agent
   arms an `nftables` byte quota from `remainingBytes` and drops peers at the cap.
+
+## Restricting the control port
+
+The agent's HTTP port must only be reachable by the control plane. We enforce it
+with a dedicated `nftables` table (its own hook, `policy accept`, so nothing else
+is touched — SSH, WireGuard, forwarding, NAT and the `wgquota` table are all
+unaffected; only TCP 8080 from a non-allowed source is dropped). Loopback is
+allowed so on-box `curl 127.0.0.1:8080/metrics` checks keep working.
+
+Render's static outbound IP ranges come from the service's **Connect → Outbound**
+tab (Pro plan). As of setup: `74.220.48.0/24` and `74.220.56.0/24`.
+
+`/etc/nftables/portfilter.nft` (the add-then-delete pair makes reloads idempotent
+without flushing the global ruleset):
+
+```
+add table inet portfilter
+delete table inet portfilter
+table inet portfilter {
+    chain input {
+        type filter hook input priority 0; policy accept;
+        iif "lo" accept
+        tcp dport 8080 ip saddr { 74.220.48.0/24, 74.220.56.0/24 } accept
+        tcp dport 8080 drop
+    }
+}
+```
+
+Persisted across reboot by a oneshot unit that re-applies only this table:
+
+```ini
+# /etc/systemd/system/agent-portfilter.service
+[Unit]
+Description=Agent control-port firewall (nftables inet portfilter)
+After=network-pre.target
+Wants=network-pre.target
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/nft -f /etc/nftables/portfilter.nft
+RemainAfterExit=yes
+[Install]
+WantedBy=multi-user.target
+```
+
+Apply / enable:
+
+```bash
+nft -f /etc/nftables/portfilter.nft
+systemctl enable --now agent-portfilter.service
+```
+
+If Render's outbound ranges ever change, edit the `saddr` set in
+`portfilter.nft`, re-run `nft -f …`, and the change persists.
 
 ## Manual test log (real droplet)
 
@@ -199,4 +254,3 @@ Result vs. acceptance criteria:
 > what actually stopped the traffic (BACKEND.md §6.3.5). To surface the literal
 > `/v1/usage` number end-to-end, register this node as a `provisioner='agent'`
 > server (with `agent_url`) and provision the peer through `POST /v1/sessions`.
-```
