@@ -18,6 +18,10 @@ function toClient(row) {
     publicKey: row.public_key,
     load: row.load == null ? null : Number(row.load),
     isPremium: row.is_premium,
+    // A server is connectable only when it's backed by a real node agent.
+    // Placeholder/seed servers (provisioner='mock') report false so the client
+    // can show them as "Coming soon" instead of letting the user connect.
+    available: row.enabled && row.provisioner === 'agent' && !!row.agent_url,
   };
 }
 
