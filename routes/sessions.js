@@ -58,6 +58,7 @@ router.post(
     );
 
     let peer;
+    let freshlyAllocated = false;
     if (existing.rows.length) {
       peer = existing.rows[0];
       if (!peer.active) {
@@ -68,17 +69,28 @@ router.post(
       if (!peer) {
         return res.status(503).json({ error: 'Server at capacity, try another region.' });
       }
+      freshlyAllocated = true;
     }
 
     // Program the node (mock or real agent). Arm enforcement with REMAINING
-    // bytes, not the full plan.
-    await provisioner.addPeer({
-      server,
-      publicKey,
-      assignedIp: peer.assigned_ip,
-      presharedKey: peer.preshared_key,
-      remainingBytes: remainingFromQuota(quota),
-    });
+    // bytes, not the full plan. If the node can't be programmed, don't leave a
+    // half-registered peer / leaked tunnel IP behind — roll back a fresh
+    // allocation and surface a clear error.
+    try {
+      await provisioner.addPeer({
+        server,
+        publicKey,
+        assignedIp: peer.assigned_ip,
+        presharedKey: peer.preshared_key,
+        remainingBytes: remainingFromQuota(quota),
+      });
+    } catch (err) {
+      console.error(`[sessions] provisioner.addPeer failed for ${serverID}:`, err.message);
+      if (freshlyAllocated) {
+        await query('DELETE FROM peers WHERE id = $1', [peer.id]).catch(() => {});
+      }
+      return res.status(502).json({ error: 'Could not reach the VPN node. Try again or pick another server.' });
+    }
 
     return res.json({
       serverPublicKey: server.public_key,
