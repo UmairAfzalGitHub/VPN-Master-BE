@@ -9,18 +9,19 @@
  * itself is deployed separately on each Linux node (it needs a real kernel +
  * WireGuard) — see BACKEND.md section 3 and README "Deploying a real node".
  *
- *   POST {agent_url}/peers          -> add/refresh a peer, arm nftables quota
+ *   POST   {agent_url}/peers  -> add/refresh a peer, arm nftables quota
  *     body: { publicKey, assignedIp, presharedKey, remainingBytes }
- *   POST {agent_url}/peers/remove   -> remove a peer, drop enforcement + free IP
+ *   DELETE {agent_url}/peers  -> remove a peer, drop enforcement + free IP
  *     body: { publicKey }
  *
- * Auth: header `X-Node-Secret: <NODE_AGENT_SECRET>` (shared with the agent).
+ * Auth: header `X-Agent-Secret: <NODE_AGENT_SECRET>` (shared with the agent;
+ * verified against the running node agent's contract).
  */
 
 const NODE_AGENT_SECRET = process.env.NODE_AGENT_SECRET || '';
 const TIMEOUT_MS = Number(process.env.NODE_AGENT_TIMEOUT_MS || 8000);
 
-async function call(server, path, body) {
+async function call(server, method, path, body) {
   if (!server.agent_url) {
     throw new Error(`server ${server.id} has provisioner='agent' but no agent_url`);
   }
@@ -29,17 +30,17 @@ async function call(server, path, body) {
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     const res = await fetch(url, {
-      method: 'POST',
+      method,
       headers: {
         'Content-Type': 'application/json',
-        'X-Node-Secret': NODE_AGENT_SECRET,
+        'X-Agent-Secret': NODE_AGENT_SECRET,
       },
       body: JSON.stringify(body),
       signal: controller.signal,
     });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(`node agent ${server.id} ${path} -> ${res.status} ${text}`);
+      throw new Error(`node agent ${server.id} ${method} ${path} -> ${res.status} ${text}`);
     }
     return res.json().catch(() => ({ ok: true }));
   } finally {
@@ -48,7 +49,7 @@ async function call(server, path, body) {
 }
 
 async function addPeer({ server, publicKey, assignedIp, presharedKey, remainingBytes }) {
-  return call(server, '/peers', {
+  return call(server, 'POST', '/peers', {
     publicKey,
     assignedIp,
     presharedKey: presharedKey || null,
@@ -58,7 +59,7 @@ async function addPeer({ server, publicKey, assignedIp, presharedKey, remainingB
 }
 
 async function removePeer({ server, publicKey }) {
-  return call(server, '/peers/remove', { publicKey });
+  return call(server, 'DELETE', '/peers', { publicKey });
 }
 
 module.exports = { addPeer, removePeer };
