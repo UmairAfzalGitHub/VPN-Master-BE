@@ -112,9 +112,11 @@ with the node, not in this repo.
 - [x] Restrict the node agent's TCP port to the control plane — done:
       `us-nyc-01` firewalls 8080 to Render's outbound ranges via an nftables
       `portfilter` table (see `node-agent/README.md`).
-- [ ] Put the node agent behind TLS (`X-Agent-Secret` still travels over plain
-      HTTP; terminate TLS with a reverse proxy + DNS name, switch `agent_url` to
-      `https://`).
+- [~] Put the node agent behind TLS — node side done: `us-nyc-01` serves HTTPS
+      on 8443 with a self-signed IP-SAN cert (no domain), committed at
+      `certs/us-nyc-01-agent.crt`. Remaining (control plane): set
+      `NODE_EXTRA_CA_CERTS` on Render + flip `agent_url` to `https://…:8443`
+      (see `node-agent/README.md` → "TLS (self-signed, pinned)").
 
 ## Layout
 

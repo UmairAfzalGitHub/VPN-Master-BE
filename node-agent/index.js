@@ -42,6 +42,13 @@ app.use(express.json());
 const AGENT_SECRET = process.env.AGENT_SECRET || '';
 const WG_INTERFACE = process.env.WG_INTERFACE || 'wg0';
 const PORT = Number(process.env.AGENT_PORT || 8080);
+// Optional TLS: when TLS_CERT_FILE + TLS_KEY_FILE are set, ALSO serve HTTPS on
+// AGENT_TLS_PORT (the control plane pins this self-signed cert via
+// NODE_EXTRA_CA_CERTS). The plain-HTTP listener stays up so the switch is
+// zero-downtime; close 8080 once agent_url has moved to https. See README.
+const TLS_CERT_FILE = process.env.TLS_CERT_FILE || '';
+const TLS_KEY_FILE = process.env.TLS_KEY_FILE || '';
+const TLS_PORT = Number(process.env.AGENT_TLS_PORT || 8443);
 const NFT_TABLE = 'wgquota'; // family inet — kept separate from the NAT table
 const SWEEP_INTERVAL_MS = Number(process.env.QUOTA_SWEEP_INTERVAL_MS || 15 * 1000);
 const STATE_FILE = process.env.AGENT_STATE_FILE || '/var/lib/vpn-agent/peers.json';
@@ -395,4 +402,22 @@ const sweepHandle = setInterval(() => {
 }, SWEEP_INTERVAL_MS);
 sweepHandle.unref?.();
 
-app.listen(PORT, () => console.log(`VPN Agent running on port ${PORT} (iface ${WG_INTERFACE})`));
+app.listen(PORT, () => console.log(`VPN Agent HTTP on port ${PORT} (iface ${WG_INTERFACE})`));
+
+// Optional TLS listener (same app, same auth) so the control-plane secret isn't
+// sent in cleartext over the Render↔node transit. Best-effort: a cert problem
+// disables HTTPS but never takes down the working HTTP listener.
+if (TLS_CERT_FILE && TLS_KEY_FILE) {
+  try {
+    const https = require('https');
+    const credentials = {
+      cert: fs.readFileSync(TLS_CERT_FILE),
+      key: fs.readFileSync(TLS_KEY_FILE),
+    };
+    https
+      .createServer(credentials, app)
+      .listen(TLS_PORT, () => console.log(`VPN Agent HTTPS on port ${TLS_PORT}`));
+  } catch (err) {
+    console.error(`[agent] TLS disabled (HTTP still up): ${err.message}`);
+  }
+}

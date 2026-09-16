@@ -123,9 +123,9 @@ quotes would become part of the value and break auth.
 - **Control port is locked to the control plane (done):** TCP `AGENT_PORT`
   (8080) is firewalled to Render's outbound IP ranges; UDP 51820 (WireGuard)
   stays open to the world. See "Restricting the control port" below.
-- **Still over plain HTTP (TODO):** the `X-Agent-Secret` travels unencrypted if
-  `agent_url` is `http://`. Terminate TLS in front of the agent (e.g. a Caddy
-  reverse proxy with a DNS name) and switch `agent_url` to `https://`.
+- **TLS is live (done):** the agent serves HTTPS on `AGENT_TLS_PORT` (8443) with
+  a self-signed cert the control plane pins via `NODE_EXTRA_CA_CERTS`; no domain
+  or public CA needed. See "TLS (self-signed, pinned)" below.
 - Inputs are also passed to `nft` via `execFileSync` argv arrays (no shell), so
   the quota path carries no command-injection surface either.
 - **In-kernel quota enforcement is live** (see the section above) — the agent
@@ -152,8 +152,8 @@ table inet portfilter {
     chain input {
         type filter hook input priority 0; policy accept;
         iif "lo" accept
-        tcp dport 8080 ip saddr { 74.220.48.0/24, 74.220.56.0/24 } accept
-        tcp dport 8080 drop
+        tcp dport { 8080, 8443 } ip saddr { 74.220.48.0/24, 74.220.56.0/24 } accept
+        tcp dport { 8080, 8443 } drop
     }
 }
 ```
@@ -196,6 +196,56 @@ tcpdump -ni eth0 'tcp and dst port 8080 and tcp[tcpflags] & tcp-syn != 0' \
 Compare against the service's **Connect → Outbound** ranges, then update the
 `saddr` set in `/etc/nftables/portfilter.nft`, re-run `nft -f /etc/nftables/portfilter.nft`
 (the change persists), and confirm a `/v1/sessions` succeeds again.
+
+## TLS (self-signed, pinned)
+
+The agent is the only client's-eye server here — only the control plane calls it
+— so it doesn't need a publicly-trusted (Let's Encrypt) cert or a domain. It
+serves HTTPS with a **self-signed cert whose SAN is the node's IP**, and the
+control plane trusts exactly that cert via `NODE_EXTRA_CA_CERTS`. `X-Agent-Secret`
+still authenticates the client; TLS adds encryption + server authentication so
+the secret isn't sent in cleartext over the Render↔node transit.
+
+The agent serves **both** HTTP (8080) and HTTPS (`AGENT_TLS_PORT`, 8443) when
+`TLS_CERT_FILE` + `TLS_KEY_FILE` are set, so the cutover is zero-downtime. A cert
+problem disables HTTPS but never takes down the HTTP listener.
+
+**On the node** (already done for `us-nyc-01`):
+
+```bash
+# self-signed cert, IP SAN, 10-year expiry (no domain needed)
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
+  -keyout /opt/vpn-agent/agent.key -out /opt/vpn-agent/agent.crt -days 3650 \
+  -subj "/CN=vpn-agent-us-nyc-01" -addext "subjectAltName=IP:192.34.58.185,IP:127.0.0.1"
+chmod 600 /opt/vpn-agent/agent.key
+
+# tell the agent where they are (systemd drop-in), then restart
+mkdir -p /etc/systemd/system/vpn-agent.service.d
+printf '[Service]\nEnvironment=TLS_CERT_FILE=/opt/vpn-agent/agent.crt\nEnvironment=TLS_KEY_FILE=/opt/vpn-agent/agent.key\nEnvironment=AGENT_TLS_PORT=8443\n' \
+  > /etc/systemd/system/vpn-agent.service.d/tls.conf
+systemctl daemon-reload && systemctl restart vpn-agent
+
+# verify on the box (cert is valid for 127.0.0.1 too)
+curl --cacert /opt/vpn-agent/agent.crt https://127.0.0.1:8443/metrics -H "X-Agent-Secret: <secret>"
+```
+
+**On the control plane (Render):**
+
+1. The node's **public** cert is committed at `certs/us-nyc-01-agent.crt`. Set
+   `NODE_EXTRA_CA_CERTS=/opt/render/project/src/certs/us-nyc-01-agent.crt` (Node's
+   `fetch`/undici honors it) and redeploy. This only adds trust — behavior is
+   unchanged while `agent_url` is still `http://`.
+2. Flip the node's `agent_url` to HTTPS:
+   ```sql
+   UPDATE servers SET agent_url = 'https://192.34.58.185:8443' WHERE id = 'us-nyc-01';
+   ```
+3. Confirm a `POST /v1/sessions` still succeeds. To roll back instantly, set
+   `agent_url` back to `http://192.34.58.185:8080`.
+
+Once HTTPS is confirmed, you may drop plain HTTP: remove `8080` from
+`portfilter.nft` (leaving `8443`) and re-run `nft -f …`. The cert is self-signed
+and expires in 10 years; regenerate + re-commit `certs/us-nyc-01-agent.crt`
+before then (and whenever the node IP changes, since the SAN pins it).
 
 ## Manual test log (real droplet)
 
