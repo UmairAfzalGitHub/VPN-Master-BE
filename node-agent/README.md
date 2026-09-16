@@ -181,8 +181,21 @@ nft -f /etc/nftables/portfilter.nft
 systemctl enable --now agent-portfilter.service
 ```
 
-If Render's outbound ranges ever change, edit the `saddr` set in
-`portfilter.nft`, re-run `nft -f …`, and the change persists.
+**If Render's outbound ranges change** (a plan or region change can do this),
+this filter fails *silently*: no error, but the control plane's calls are dropped
+before they reach the agent. Symptoms — `/v1/usage` stops advancing for connected
+devices, quotas never arm, and new `/v1/sessions` time out talking to the node.
+To diagnose and fix:
+
+```bash
+# See who is actually being dropped on 8080 (run ~3 min to catch a poll cycle):
+tcpdump -ni eth0 'tcp and dst port 8080 and tcp[tcpflags] & tcp-syn != 0' \
+  | awk '{print $3}' | sed 's/\.[0-9]*$//' | sort | uniq -c | sort -rn
+```
+
+Compare against the service's **Connect → Outbound** ranges, then update the
+`saddr` set in `/etc/nftables/portfilter.nft`, re-run `nft -f /etc/nftables/portfilter.nft`
+(the change persists), and confirm a `/v1/sessions` succeeds again.
 
 ## Manual test log (real droplet)
 
