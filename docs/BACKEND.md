@@ -34,20 +34,31 @@ unchanged.
   `/internal/nodes/:id/report` for node agents to report deltas (§5, §6.1–6.2).
 - ✅ Pluggable **provisioner**: `mock` (default; runs with no WG node) + `agent`
   HTTP contract for a real node.
+- ✅ **Real WireGuard node + agent** — `us-nyc-01` (`provisioner='agent'`) is a
+  live Linux WG host running `wg` + the node agent (`node-agent/index.js`,
+  deployed to the droplet). Real handshakes, real tunnel-IP allocation from
+  `10.8.0.0/16` (§3).
+- ✅ **Network-level quota enforcement (§6.3)** — the node agent arms an in-kernel
+  `nftables` per-peer byte quota (`table inet wgquota`) from `remainingBytes`,
+  counting RX+TX combined; the kernel drops the peer at its allowance and a sweep
+  removes it from `wg0`. Verified end-to-end on the droplet (see
+  `node-agent/README.md`). Postgres decides the number; the node enforces it.
+- ✅ **Per-device quota across key rotation (§2.4/§6)** — the iOS client now sends
+  `Authorization: Bearer <deviceToken>`, so quota follows the device across
+  WireGuard keypairs instead of resetting each reconnect. Verified end-to-end
+  against `us-nyc-01` (usage accumulated across a key rotation).
 
 **Not done yet**
-- 🔲 **Real WireGuard node + agent** — every seed server is `provisioner='mock'`,
-  so tunnels don't actually hand-shake. Needs a Linux host running `wg` +
-  nftables byte-quota enforcement, plus the agent that talks to it (§3, §6.3).
-- 🔲 **Network-level quota enforcement** — the kernel `nftables quota` that is
-  the *real* gate (§6.3) lives on the node agent, which isn't built. Today the
-  ledger + `/sessions` refusal are the only quota mechanisms (bookkeeping-grade).
 - 🔲 **`POST /v1/purchases/validate`** — IAP receipt validation, Premium (§2.6).
-- 🔲 **Client-side gaps (§8)** — done: `X-API-Key` + live `baseURL`. Remaining:
-  unify `MockServerRepository` → real repo, `/sessions/close` on disconnect,
-  quota/data-meter UI, default-server persistence.
+- 🔲 **More real regions** — only `us-nyc-01` is live; `gb-lon-01`, `de-fra-01`,
+  `sg-sin-01` still point at `*.vpnmaster.example.net` and are mock/unreachable.
+- 🔲 **Client-side gaps (§8)** — done: `X-API-Key`, live `baseURL`, device
+  `Bearer` token, token-keyed `/usage`. Remaining: `/sessions/close` on
+  disconnect, default-server persistence, near-cap warning + quota-exceeded
+  upsell UI.
 - 🔲 **Production hardening** — free Render Postgres expires in 30 days; real
-  Terms/Privacy URLs; rate-limiting `/sessions`; rotating setup secrets.
+  Terms/Privacy URLs; rate-limiting `/sessions`; rotating setup secrets; restrict
+  the agent's TCP port to the control plane + put it behind TLS.
 
 See `README.md` for run/deploy details and the per-file layout.
 

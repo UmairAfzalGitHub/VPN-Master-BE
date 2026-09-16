@@ -102,10 +102,15 @@ with the node, not in this repo.
       paid instance (or recreate + re-run migrations). Data is lost on expiry.
 - [ ] Set real `TERMS_URL` / `PRIVACY_URL` (Settings + onboarding links).
 - [ ] Rotate `API_KEYS` / `JWT_SECRET` off any values shared during setup.
-- [ ] Stand up at least one real WireGuard node + agent and flip its `servers`
-      row to `provisioner='agent'` (see "Deploying a real WireGuard node").
-- [ ] Have the iOS client adopt `POST /devices` + `Authorization: Bearer` so
-      quota is per-device, not per-keypair (closes the fresh-quota-on-new-key gap).
+- [x] Stand up at least one real WireGuard node + agent and flip its `servers`
+      row to `provisioner='agent'` — done: `us-nyc-01` is live with in-kernel
+      nftables quota enforcement (see `node-agent/README.md`). More regions
+      (`gb-lon-01`, `de-fra-01`, `sg-sin-01`) are still mock.
+- [x] Have the iOS client adopt `POST /devices` + `Authorization: Bearer` so
+      quota is per-device, not per-keypair — done; verified usage accumulates
+      across a WireGuard key rotation on `us-nyc-01`.
+- [ ] Restrict the node agent's TCP port to the control plane and put it behind
+      TLS (`X-Agent-Secret` currently travels over plain HTTP).
 
 ## Layout
 
