@@ -10,8 +10,17 @@ The actual WireGuard nodes are separate Linux hosts; the control plane programs
 their peers through a pluggable **provisioner** (`mock` by default, `agent` for
 real nodes).
 
-> Responses are **bare JSON bodies** (Option A in `BACKEND.md`), so the current
-> iOS client decodes them with no changes.
+> Responses are **bare JSON bodies** (Option A in `docs/BACKEND.md`), so the
+> current iOS client decodes them with no changes.
+
+## Documentation
+
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — how the app, control plane,
+  and WireGuard node communicate (diagrams).
+- [`docs/architecture.html`](docs/architecture.html) — the same, as a visual
+  page you can open in a browser.
+- [`docs/BACKEND.md`](docs/BACKEND.md) — the full backend spec + implementation
+  status.
 
 ## Quick start (local)
 
