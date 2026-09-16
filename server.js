@@ -10,6 +10,7 @@ const { runMigrations } = require('./db/migrate');
 const { requireApiKey, configuredKeys } = require('./middleware/apiKey');
 const { optionalDeviceAuth } = require('./middleware/deviceAuth');
 const { startReaper } = require('./services/reaper');
+const { startUsagePoller } = require('./services/usagePoller');
 
 const serversRoutes = require('./routes/servers');
 const sessionsRoutes = require('./routes/sessions');
@@ -63,6 +64,7 @@ async function start() {
 
     await runMigrations();
     startReaper();
+    startUsagePoller();
 
     app.listen(PORT, () => {
       console.log(`[http] vpn-master-backend listening on :${PORT}`);
