@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VPN Master Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+  :root {
+    --bg: #eaeef3;
+    --surface: #ffffff;
+    --surface-2: #f3f6fa;
+    --ink: #14202e;
+    --muted: #5c6b7d;
+    --line: #d3dbe4;
+    --line-strong: #b9c4d0;
+    --control: #2f66ff;   /* control path (setup/metering) */
+    --tunnel: #109c66;    /* data path (encrypted VPN) */
+    --warn: #b9701f;
+    --shadow: 0 1px 2px rgba(20,32,46,.06), 0 8px 24px rgba(20,32,46,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0b1017;
+      --surface: #121b27;
+      --surface-2: #0e1620;
+      --ink: #e7eef6;
+      --muted: #8797ab;
+      --line: #243040;
+      --line-strong: #33445a;
+      --control: #6a95ff;
+      --tunnel: #34c98a;
+      --warn: #d9a45a;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b1017;
+    --surface: #121b27;
+    --surface-2: #0e1620;
+    --ink: #e7eef6;
+    --muted: #8797ab;
+    --line: #243040;
+    --line-strong: #33445a;
+    --control: #6a95ff;
+    --tunnel: #34c98a;
+    --warn: #d9a45a;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 30px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 56px 72px; }
+  code, .mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+
+  /* ---- header ---- */
+  .eyebrow {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 12px; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--control); margin: 0 0 14px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .eyebrow::before { content: ""; width: 26px; height: 2px; background: var(--control); }
+  h1 {
+    font-family: "Archivo", sans-serif; font-weight: 800;
+    font-size: clamp(30px, 5vw, 46px); line-height: 1.04; letter-spacing: -.02em;
+    margin: 0 0 16px; text-wrap: balance;
+  }
+  .lede { font-size: 18px; color: var(--muted); max-width: 62ch; margin: 0; }
+  .lede strong { color: var(--ink); font-weight: 600; }
+
+  /* ---- legend ---- */
+  .legend { display: flex; flex-wrap: wrap; gap: 22px; margin: 26px 0 8px; }
+  .legend > div { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--muted); }
+  .swatch { width: 26px; height: 0; border-top-width: 4px; border-top-style: solid; border-radius: 2px; }
+  .swatch.data { border-color: var(--tunnel); }
+  .swatch.ctrl { border-color: var(--control); border-top-style: dashed; }
+
+  /* ---- diagram ---- */
+  .diagram-shell {
+    margin: 30px 0 12px; background: var(--surface); border: 1px solid var(--line);
+    border-radius: 18px; box-shadow: var(--shadow); overflow: hidden;
+  }
+  .diagram-scroll { overflow-x: auto; padding: 8px; }
+  svg.diagram { display: block; width: 100%; min-width: 720px; height: auto; }
+
+  .s-plane { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1.5; }
+  .s-plane.render { stroke: var(--control); }
+  .s-plane.droplet { stroke: var(--tunnel); }
+  .s-chip { fill: var(--surface-2); stroke: var(--line); stroke-width: 1; }
+  .s-title { fill: var(--ink); font-family: "Archivo", sans-serif; font-weight: 700; font-size: 17px; }
+  .s-sub { fill: var(--muted); font-family: "JetBrains Mono", monospace; font-size: 12px; }
+  .s-chiptext { fill: var(--ink); font-family: "JetBrains Mono", monospace; font-size: 12.5px; }
+  .s-emoji { font-size: 20px; }
+
+  .mk-data { fill: var(--tunnel); }
+  .mk-ctrl { fill: var(--control); }
+  .path-data { fill: none; stroke: var(--tunnel); stroke-width: 5.5; }
+  .path-ctrl { fill: none; stroke: var(--control); stroke-width: 2; stroke-dasharray: 7 6; }
+  .lbl { font-family: "JetBrains Mono", monospace; font-size: 12.5px; }
+  .lbl.data { fill: var(--tunnel); font-weight: 700; }
+  .lbl.ctrl { fill: var(--control); }
+  .lbl.muted { fill: var(--muted); }
+
+  /* ---- flow steps ---- */
+  h2 {
+    font-family: "Archivo", sans-serif; font-weight: 700; font-size: 22px;
+    letter-spacing: -.01em; margin: 48px 0 4px;
+  }
+  .section-note { color: var(--muted); font-size: 15px; margin: 0 0 22px; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .step {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+    padding: 18px 18px 20px; box-shadow: var(--shadow); position: relative;
+  }
+  .step .n {
+    font-family: "Archivo", sans-serif; font-weight: 800; font-size: 13px;
+    color: var(--control); letter-spacing: .04em;
+  }
+  .step h3 { font-family: "Archivo", sans-serif; font-weight: 700; font-size: 15.5px; margin: 6px 0 8px; }
+  .step p { margin: 0; font-size: 13.5px; color: var(--muted); }
+  .step p code { font-size: 12.5px; color: var(--ink); background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
+  .step.tunnel { border-color: var(--tunnel); }
+  .step.tunnel .n { color: var(--tunnel); }
+
+  /* ---- reference chips ---- */
+  .refs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 8px; }
+  .ref {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px 16px; display: flex; flex-direction: column; gap: 3px;
+  }
+  .ref .k { font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); font-family: "JetBrains Mono", monospace; }
+  .ref .v { font-family: "JetBrains Mono", monospace; font-size: 14px; color: var(--ink); font-weight: 500; }
+
+  .note {
+    margin-top: 26px; border-left: 3px solid var(--warn); background: var(--surface);
+    border-radius: 0 12px 12px 0; padding: 14px 18px; color: var(--muted); font-size: 14px;
+  }
+  .note strong { color: var(--warn); }
+  footer { margin-top: 40px; color: var(--muted); font-size: 13px; font-family: "JetBrains Mono", monospace; }
+
+  @media (max-width: 720px) {
+    .steps, .refs { grid-template-columns: 1fr; }
+    .wrap { padding-block: 40px 56px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <p class="eyebrow">WireGuard · dynamic model</p>
+  <h1>VPN Master Architecture</h1>
+  <p class="lede">Three independent pieces — the <strong>iOS app</strong>, the <strong>control plane</strong> on Render, and a <strong>WireGuard node</strong> on a DigitalOcean droplet. The one rule that explains everything: your traffic runs phone&nbsp;⇆&nbsp;droplet and <strong>never passes through Render</strong>. Render only coordinates.</p>
+
+  <div class="legend">
+    <div><span class="swatch data"></span> Data path — your encrypted traffic (the actual VPN)</div>
+    <div><span class="swatch ctrl"></span> Control path — thin HTTPS setup &amp; metering calls</div>
+  </div>
+
+  <div class="diagram-shell">
+    <div class="diagram-scroll">
+      <svg class="diagram" viewBox="0 0 1180 560" role="img" aria-label="Architecture: iPhone connects to a WireGuard droplet directly over an encrypted tunnel, while the Render control plane coordinates over thin HTTPS calls.">
+        <defs>
+          <marker id="arrowData" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path class="mk-data" d="M0,0 L10,5 L0,10 z"></path>
+          </marker>
+          <marker id="arrowCtrl" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path class="mk-ctrl" d="M0,0 L10,5 L0,10 z"></path>
+          </marker>
+        </defs>
+
+        <!-- ===== DATA PATH (drawn first, behind boxes) ===== -->
+        <!-- phone tunnel -> droplet wg0, along the bottom, clearly below Render -->
+        <path class="path-data" d="M250,360 L360,360 Q380,360 380,380 L380,392 Q380,410 400,410 L800,410" marker-end="url(#arrowData)"></path>
+        <!-- droplet NAT -> internet -->
+        <path class="path-data" d="M1035,360 L1085,360" marker-end="url(#arrowData)"></path>
+        <text class="lbl data" x="470" y="400">encrypted WireGuard tunnel · UDP 51820</text>
+
+        <!-- ===== CONTROL PATH ===== -->
+        <!-- phone -> render -->
+        <path class="path-ctrl" d="M180,235 L180,150 Q180,132 200,132 L470,132" marker-end="url(#arrowCtrl)"></path>
+        <text class="lbl ctrl" x="196" y="120">HTTPS · X-API-Key</text>
+        <!-- render -> droplet agent (program peer) -->
+        <path class="path-ctrl" d="M760,150 Q900,150 900,235" marker-end="url(#arrowCtrl)"></path>
+        <text class="lbl ctrl" x="772" y="140">HTTP · X-Agent-Secret</text>
+        <!-- render -> agent metrics (poll) -->
+        <path class="path-ctrl" d="M760,180 Q860,180 900,250" marker-end="url(#arrowCtrl)"></path>
+        <text class="lbl muted" x="792" y="210">GET /metrics</text>
+
+        <!-- ===== iPhone ===== -->
+        <rect class="s-plane" x="40" y="235" width="210" height="220" rx="16"></rect>
+        <text class="s-emoji" x="60" y="272">📱</text>
+        <text class="s-title" x="92" y="272">iPhone</text>
+        <text class="s-sub" x="60" y="296">VPNMasteriOS</text>
+        <rect class="s-chip" x="60" y="312" width="170" height="52" rx="9"></rect>
+        <text class="s-chiptext" x="74" y="334">App · VPNService</text>
+        <text class="s-sub" x="74" y="352">ServerRepository</text>
+        <rect class="s-chip" x="60" y="374" width="170" height="60" rx="9"></rect>
+        <text class="s-chiptext" x="74" y="396">PacketTunnel ext.</text>
+        <text class="s-sub" x="74" y="414">wireguard-go · privkey</text>
+
+        <!-- ===== Render control plane ===== -->
+        <rect class="s-plane render" x="470" y="40" width="300" height="185" rx="16"></rect>
+        <text class="s-emoji" x="490" y="77">☁️</text>
+        <text class="s-title" x="522" y="77">Render — control plane</text>
+        <rect class="s-chip" x="490" y="92" width="260" height="40" rx="9"></rect>
+        <text class="s-chiptext" x="504" y="117">API · nyx-edge.onrender.com</text>
+        <rect class="s-chip" x="490" y="140" width="125" height="72" rx="9"></rect>
+        <text class="s-chiptext" x="504" y="164">Postgres</text>
+        <text class="s-sub" x="504" y="182">servers·devices</text>
+        <text class="s-sub" x="504" y="198">peers·usage</text>
+        <rect class="s-chip" x="625" y="140" width="125" height="72" rx="9"></rect>
+        <text class="s-chiptext" x="639" y="164">Jobs</text>
+        <text class="s-sub" x="639" y="182">usage poller</text>
+        <text class="s-sub" x="639" y="198">reaper</text>
+
+        <!-- ===== Droplet ===== -->
+        <rect class="s-plane droplet" x="800" y="235" width="235" height="220" rx="16"></rect>
+        <text class="s-emoji" x="820" y="272">🖥️</text>
+        <text class="s-title" x="852" y="272">Droplet</text>
+        <text class="s-sub" x="820" y="296">192.34.58.185</text>
+        <rect class="s-chip" x="820" y="312" width="195" height="40" rx="9"></rect>
+        <text class="s-chiptext" x="834" y="337">node agent · :8080</text>
+        <rect class="s-chip" x="820" y="360" width="195" height="46" rx="9"></rect>
+        <text class="s-chiptext" x="834" y="382">wg0 · UDP 51820</text>
+        <text class="s-sub" x="834" y="399">subnet 10.8.0.0/16</text>
+        <rect class="s-chip" x="820" y="414" width="195" height="30" rx="9"></rect>
+        <text class="s-chiptext" x="834" y="434">NAT · masquerade</text>
+
+        <!-- ===== Internet ===== -->
+        <rect class="s-plane" x="1085" y="322" width="80" height="76" rx="14"></rect>
+        <text class="s-emoji" x="1100" y="360">🌐</text>
+        <text class="s-sub" x="1096" y="384">Internet</text>
+      </svg>
+    </div>
+  </div>
+
+  <h2>How a connection happens</h2>
+  <p class="section-note">The exact sequence, verified end to end — from tapping Connect to packets flowing.</p>
+  <div class="steps">
+    <div class="step">
+      <div class="n">STEP 1</div>
+      <h3>Generate keys</h3>
+      <p>The app makes a fresh WireGuard keypair. The <strong>private key never leaves the phone</strong> — only the public key is sent.</p>
+    </div>
+    <div class="step">
+      <div class="n">STEP 2</div>
+      <h3>Negotiate a session</h3>
+      <p><code>POST /v1/sessions</code> with <code>serverID</code> + <code>publicKey</code>. The control plane checks quota and premium.</p>
+    </div>
+    <div class="step">
+      <div class="n">STEP 3</div>
+      <h3>Allocate &amp; program</h3>
+      <p>Postgres allocates a tunnel IP <code>10.8.0.x</code>; the API tells the node agent to add the peer (with a PSK).</p>
+    </div>
+    <div class="step">
+      <div class="n">STEP 4</div>
+      <h3>Agent runs wg</h3>
+      <p>On the droplet the agent runs <code>wg set wg0 peer …</code> — the only place a WireGuard command ever executes.</p>
+    </div>
+    <div class="step">
+      <div class="n">STEP 5</div>
+      <h3>Build the tunnel</h3>
+      <p>The app assembles the config from the response and calls <code>startVPNTunnel()</code> in the extension.</p>
+    </div>
+    <div class="step tunnel">
+      <div class="n">STEP 6</div>
+      <h3>Handshake → connected</h3>
+      <p>A Noise handshake completes to <code>192.34.58.185:51820</code>. Traffic now flows <strong>phone ⇆ droplet ⇆ internet</strong>.</p>
+    </div>
+  </div>
+
+  <h2>Metering, without being in the way</h2>
+  <p class="section-note">Postgres is the ledger; the node is where traffic happens. They reconcile by polling — the API is never in the packet path.</p>
+  <div class="steps">
+    <div class="step tunnel">
+      <div class="n">EVERY ~60s</div>
+      <h3>Poll the node</h3>
+      <p>The poller calls the agent's <code>GET /metrics</code>, which reads <code>wg show wg0 dump</code> — per-peer RX, TX, last handshake.</p>
+    </div>
+    <div class="step">
+      <div class="n">ACCUMULATE</div>
+      <h3>Add the delta</h3>
+      <p>It stores each reading and adds only the <strong>difference</strong> to the device's monthly counter — reset-tolerant, summed across nodes.</p>
+    </div>
+    <div class="step">
+      <div class="n">SURFACE</div>
+      <h3>Report to the app</h3>
+      <p><code>GET /v1/usage</code> returns <code>usedBytes</code> / <code>remainingBytes</code> against the 1&nbsp;GB free monthly cap.</p>
+    </div>
+  </div>
+
+  <h2>Reference</h2>
+  <p class="section-note">The addresses, ports, and secrets that hold the three planes together.</p>
+  <div class="refs">
+    <div class="ref"><span class="k">Control plane</span><span class="v">nyx-edge.onrender.com</span></div>
+    <div class="ref"><span class="k">VPN node</span><span class="v">192.34.58.185</span></div>
+    <div class="ref"><span class="k">Tunnel subnet</span><span class="v">10.8.0.0/16</span></div>
+    <div class="ref"><span class="k">Tunnel port</span><span class="v">UDP 51820</span></div>
+    <div class="ref"><span class="k">Agent port</span><span class="v">TCP 8080</span></div>
+    <div class="ref"><span class="k">Free plan</span><span class="v">1 GB / month · RX+TX</span></div>
+    <div class="ref"><span class="k">App → API auth</span><span class="v">X-API-Key</span></div>
+    <div class="ref"><span class="k">API → agent auth</span><span class="v">X-Agent-Secret</span></div>
+    <div class="ref"><span class="k">Device tokens</span><span class="v">JWT · Bearer</span></div>
+  </div>
+
+  <div class="note"><strong>Two things to harden before production:</strong> the agent link is plain <code>http://…:8080</code>, so <code>X-Agent-Secret</code> travels unencrypted — put it behind TLS and lock the port to Render. And in-kernel <code>nftables</code> quota enforcement isn't wired yet, so today the cap is bookkeeping, not a hard cut.</div>
+
+  <footer>VPN Master · dynamic WireGuard model · see BACKEND.md &amp; ARCHITECTURE.md in the repo</footer>
+</div>
+</body>
+</html>
