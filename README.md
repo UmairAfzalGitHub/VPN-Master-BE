@@ -112,12 +112,12 @@ with the node, not in this repo.
 - [x] Restrict the node agent's TCP port to the control plane — done:
       `us-nyc-01` firewalls 8080 to Render's outbound ranges via an nftables
       `portfilter` table (see `node-agent/README.md`).
-- [~] Put the node agent behind TLS — node side done: `us-nyc-01` serves HTTPS
-      on 8443 with a self-signed IP-SAN cert (no domain), committed at
+- [x] Put the node agent behind TLS — done: `us-nyc-01` serves HTTPS on 8443
+      with a self-signed IP-SAN cert (no domain), committed at
       `certs/us-nyc-01-agent.crt` and trusted in code
-      (`services/provisioner/nodeHttp.js`). Remaining (control plane): push, then
-      flip `agent_url` to `https://…:8443` (see `node-agent/README.md` → "TLS
-      (self-signed, pinned)"). No env var needed.
+      (`services/provisioner/nodeHttp.js`); `agent_url` is `https://…:8443`.
+      Plain HTTP is loopback-only and closed at the firewall; ufw (8443 → Render
+      only) is the single firewall. See `node-agent/README.md` → "TLS".
 
 ## Layout
 

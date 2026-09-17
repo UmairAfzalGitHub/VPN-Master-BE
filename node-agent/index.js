@@ -402,11 +402,18 @@ const sweepHandle = setInterval(() => {
 }, SWEEP_INTERVAL_MS);
 sweepHandle.unref?.();
 
-app.listen(PORT, () => console.log(`VPN Agent HTTP on port ${PORT} (iface ${WG_INTERFACE})`));
+// When TLS is configured, HTTPS is the public interface and plain HTTP binds to
+// loopback only (on-box health checks still work, but nothing external reaches
+// it). Without TLS, HTTP stays on all interfaces so a not-yet-cut-over node keeps
+// working.
+const HTTP_BIND = TLS_CERT_FILE && TLS_KEY_FILE ? '127.0.0.1' : '0.0.0.0';
+app.listen(PORT, HTTP_BIND, () =>
+  console.log(`VPN Agent HTTP on ${HTTP_BIND}:${PORT} (iface ${WG_INTERFACE})`),
+);
 
-// Optional TLS listener (same app, same auth) so the control-plane secret isn't
-// sent in cleartext over the Render↔node transit. Best-effort: a cert problem
-// disables HTTPS but never takes down the working HTTP listener.
+// Optional TLS listener (same app, same auth) on all interfaces so the
+// control-plane secret isn't sent in cleartext over the Render↔node transit.
+// Best-effort: a cert problem disables HTTPS but never takes down HTTP.
 if (TLS_CERT_FILE && TLS_KEY_FILE) {
   try {
     const https = require('https');

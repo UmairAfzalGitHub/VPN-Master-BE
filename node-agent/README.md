@@ -120,10 +120,11 @@ quotes would become part of the value and break auth.
   passed to `wg` via `execFileSync` (no shell) — no command injection.
 - PSKs are written to a `0600` temp file (never a shell arg) and unlinked.
 - Peers persist across reboot via `wg-quick save`.
-- **Control ports are locked to the control plane (done):** the agent's HTTPS
-  (8443) and HTTP (8080) ports are firewalled (via `ufw`) to Render's outbound
-  IP ranges; UDP 51820 (WireGuard) stays open to the world. See "Restricting the
-  control port" below.
+- **Control port is locked to the control plane (done):** only HTTPS (8443) is
+  exposed, firewalled (via `ufw`) to Render's outbound IP ranges. Plain HTTP
+  binds to `127.0.0.1` (on-box checks only) and 8080 is closed at the firewall.
+  UDP 51820 (WireGuard) stays open to the world. See "Restricting the control
+  port" below.
 - **TLS is live (done):** the agent serves HTTPS on `AGENT_TLS_PORT` (8443) with
   a self-signed cert the control plane trusts in code (loads `certs/*.crt`); no
   domain or public CA needed. See "TLS (self-signed, pinned)" below.
@@ -150,15 +151,10 @@ ufw allow from 74.220.48.0/24 to any port 8443 proto tcp
 ufw allow from 74.220.56.0/24 to any port 8443 proto tcp
 ufw status                         # 8443 ALLOW from the two ranges; 22, 51820 anywhere
 ```
-ufw rules persist across reboot on their own. (Port 8080 — plain HTTP — is also
-open in ufw from setup; keep it for rollback, or `ufw delete allow 8080/tcp` once
-you're confident on HTTPS.)
-
-> **Defense-in-depth (optional):** an extra `nftables` table `inet portfilter`
-> (loaded at boot by `agent-portfilter.service`) also scopes 8080/8443 to the
-> Render ranges. It's redundant with the ufw `from`-scoping above; either layer
-> alone suffices. If you keep it, update **both** when the IPs change. To drop it
-> and rely on ufw alone: `systemctl disable --now agent-portfilter.service && nft delete table inet portfilter`.
+ufw rules persist across reboot on their own. Plain HTTP (8080) is **not**
+exposed: the agent binds it to `127.0.0.1` when TLS is on, and it's removed from
+ufw (`ufw delete allow 8080/tcp`). ufw is the single firewall — an earlier
+`nftables inet portfilter` layer was removed as redundant.
 
 **If Render's outbound ranges change** (a plan or region change can do this), the
 firewall fails *silently*: no error, but the control plane's calls are dropped
@@ -186,9 +182,11 @@ control plane trusts exactly that cert via `NODE_EXTRA_CA_CERTS`. `X-Agent-Secre
 still authenticates the client; TLS adds encryption + server authentication so
 the secret isn't sent in cleartext over the Render↔node transit.
 
-The agent serves **both** HTTP (8080) and HTTPS (`AGENT_TLS_PORT`, 8443) when
-`TLS_CERT_FILE` + `TLS_KEY_FILE` are set, so the cutover is zero-downtime. A cert
-problem disables HTTPS but never takes down the HTTP listener.
+When `TLS_CERT_FILE` + `TLS_KEY_FILE` are set the agent serves HTTPS on
+`AGENT_TLS_PORT` (8443, all interfaces) and binds plain HTTP to `127.0.0.1` only
+(on-box checks). During the initial cutover HTTP was still public so the switch
+was zero-downtime; it's since been closed (loopback bind + removed from ufw). A
+cert problem disables HTTPS but never takes down the local HTTP listener.
 
 **On the node** (already done for `us-nyc-01`):
 
@@ -234,10 +232,11 @@ ships with the code. `http://` agent_urls keep working (the `ca` is ignored).
 To add another node later, commit its agent's public cert to `certs/` and it's
 trusted automatically.
 
-Once HTTPS is confirmed, you may drop plain HTTP: remove `8080` from
-`portfilter.nft` (leaving `8443`) and re-run `nft -f …`. The cert is self-signed
-and expires in 10 years; regenerate + re-commit `certs/us-nyc-01-agent.crt`
-before then (and whenever the node IP changes, since the SAN pins it).
+Plain HTTP has been closed post-cutover (agent binds it to `127.0.0.1`, and
+`ufw delete allow 8080/tcp`), so only HTTPS 8443 is exposed. The cert is
+self-signed and expires in 10 years; regenerate + re-commit
+`certs/us-nyc-01-agent.crt` before then (and whenever the node IP changes, since
+the SAN pins it).
 
 ## Manual test log (real droplet)
 
