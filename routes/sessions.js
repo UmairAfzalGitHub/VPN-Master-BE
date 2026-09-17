@@ -85,7 +85,12 @@ router.post(
         remainingBytes: remainingFromQuota(quota),
       });
     } catch (err) {
-      console.error(`[sessions] provisioner.addPeer failed for ${serverID}:`, err.message);
+      console.error(
+        `[sessions] provisioner.addPeer failed for ${serverID} (agent_url=${server.agent_url}): ` +
+          `${err.message}` +
+          `${err.code ? ` code=${err.code}` : ''}` +
+          `${err.cause ? ` cause=${err.cause.code || err.cause.message}` : ''}`,
+      );
       if (freshlyAllocated) {
         await query('DELETE FROM peers WHERE id = $1', [peer.id]).catch(() => {});
       }
@@ -119,7 +124,12 @@ router.post(
       try {
         await provisioner.removePeer({ server, publicKey });
       } catch (err) {
-        console.error(`[sessions] provisioner.removePeer failed for ${serverID}:`, err.message);
+        console.error(
+          `[sessions] provisioner.removePeer failed for ${serverID} (agent_url=${server.agent_url}): ` +
+            `${err.message}` +
+            `${err.code ? ` code=${err.code}` : ''}` +
+            `${err.cause ? ` cause=${err.cause.code || err.cause.message}` : ''}`,
+        );
       }
     }
     await query('DELETE FROM peers WHERE server_id = $1 AND public_key = $2', [serverID, publicKey]);
