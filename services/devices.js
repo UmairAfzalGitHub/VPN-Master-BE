@@ -91,6 +91,21 @@ async function resolveForSession(req, publicKey) {
   return registerDevice({});
 }
 
+/**
+ * Set (or clear) a device's premium entitlement. Used by the dev-only
+ * "unlimited data" toggle; clears any expiry so premium is open-ended while on.
+ * Returns the updated device row, or null if the id is unknown.
+ * @param {string} id
+ * @param {boolean} enabled
+ */
+async function setPremium(id, enabled) {
+  const { rows } = await query(
+    'UPDATE devices SET is_premium = $2, premium_expires_at = NULL WHERE id = $1 RETURNING *',
+    [id, !!enabled],
+  );
+  return rows[0] || null;
+}
+
 /** 32 random bytes, base64 — a valid WireGuard preshared key. */
 function generatePresharedKey() {
   return crypto.randomBytes(32).toString('base64');
@@ -103,6 +118,7 @@ module.exports = {
   getById,
   registerDevice,
   touch,
+  setPremium,
   resolveForSession,
   generatePresharedKey,
 };

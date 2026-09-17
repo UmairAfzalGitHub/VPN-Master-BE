@@ -28,6 +28,12 @@ unchanged.
   `quota` (§2.2).
 - ✅ **`POST /v1/sessions/close`** — teardown / peer removal (§2.3).
 - ✅ **`POST /v1/devices`** — anonymous device identity + token (§2.4).
+- 🛠️ **`POST /v1/devices/premium`** — **dev-only** unlimited-data toggle. Requires
+  the caller's device bearer token; sets that device's `is_premium`. Gated by
+  `ALLOW_DEV_UNLIMITED` (404 when unset), so it's inert in production. Body:
+  `{ "enabled": true|false }` → `{ isPremium, quota }`. Backs the iOS Settings
+  "Unlimited Data (Dev)" switch. For genuinely unlimited (not the 100 GB premium
+  cap), also set `PREMIUM_UNLIMITED=true`.
 - ✅ **`GET /v1/usage`** — quota meter by token / `?deviceId` / `?publicKey` (§2.5).
 - ✅ **`GET /v1/config`** — remote config + free/premium plans (§2.7).
 - ✅ Quota **ledger** in Postgres (per-device monthly RX+TX), stale-peer reaper,
