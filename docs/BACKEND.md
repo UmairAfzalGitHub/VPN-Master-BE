@@ -14,7 +14,7 @@ against the API described here — see `App/Services/ServerRepository.swift`,
 ## Implementation status
 
 Snapshot of this repo against the spec. Live at
-`https://vpn-master-be.onrender.com/v1` (Node/Express/Postgres on Render),
+`https://nyx-edge.onrender.com/v1` (Node/Express/Postgres on Render),
 **bare-body responses (Option A)** — the current iOS client decodes them
 unchanged.
 
