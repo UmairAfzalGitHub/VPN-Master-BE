@@ -2,6 +2,7 @@
 
 const { pool, query } = require('../db/pool');
 const { addUsage } = require('./quota');
+const { requestJson } = require('./provisioner/nodeHttp');
 
 /**
  * Usage poller. Our node agents expose a PULL endpoint (`GET /metrics`) rather
@@ -20,19 +21,12 @@ const INTERVAL_MS = Number(process.env.USAGE_POLL_INTERVAL_MS || 60 * 1000);
 
 async function fetchMetrics(server) {
   const url = `${server.agent_url.replace(/\/$/, '')}/metrics`;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    const res = await fetch(url, {
-      headers: { 'X-Agent-Secret': NODE_AGENT_SECRET },
-      signal: controller.signal,
-    });
-    if (!res.ok) throw new Error(`metrics ${server.id} -> ${res.status}`);
-    const body = await res.json();
-    return Array.isArray(body.peers) ? body.peers : [];
-  } finally {
-    clearTimeout(timer);
-  }
+  const res = await requestJson(url, {
+    headers: { 'X-Agent-Secret': NODE_AGENT_SECRET },
+    timeoutMs: TIMEOUT_MS,
+  });
+  if (!res.ok) throw new Error(`metrics ${server.id} -> ${res.status}`);
+  return res.data && Array.isArray(res.data.peers) ? res.data.peers : [];
 }
 
 /** Ingest one agent's metrics into the ledger. Returns peers processed. */

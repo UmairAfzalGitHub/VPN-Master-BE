@@ -114,9 +114,10 @@ with the node, not in this repo.
       `portfilter` table (see `node-agent/README.md`).
 - [~] Put the node agent behind TLS — node side done: `us-nyc-01` serves HTTPS
       on 8443 with a self-signed IP-SAN cert (no domain), committed at
-      `certs/us-nyc-01-agent.crt`. Remaining (control plane): set
-      `NODE_EXTRA_CA_CERTS` on Render + flip `agent_url` to `https://…:8443`
-      (see `node-agent/README.md` → "TLS (self-signed, pinned)").
+      `certs/us-nyc-01-agent.crt` and trusted in code
+      (`services/provisioner/nodeHttp.js`). Remaining (control plane): push, then
+      flip `agent_url` to `https://…:8443` (see `node-agent/README.md` → "TLS
+      (self-signed, pinned)"). No env var needed.
 
 ## Layout
 

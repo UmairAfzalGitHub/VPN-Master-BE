@@ -124,8 +124,8 @@ quotes would become part of the value and break auth.
   (8080) is firewalled to Render's outbound IP ranges; UDP 51820 (WireGuard)
   stays open to the world. See "Restricting the control port" below.
 - **TLS is live (done):** the agent serves HTTPS on `AGENT_TLS_PORT` (8443) with
-  a self-signed cert the control plane pins via `NODE_EXTRA_CA_CERTS`; no domain
-  or public CA needed. See "TLS (self-signed, pinned)" below.
+  a self-signed cert the control plane trusts in code (loads `certs/*.crt`); no
+  domain or public CA needed. See "TLS (self-signed, pinned)" below.
 - Inputs are also passed to `nft` via `execFileSync` argv arrays (no shell), so
   the quota path carries no command-injection surface either.
 - **In-kernel quota enforcement is live** (see the section above) — the agent
@@ -231,16 +231,24 @@ curl --cacert /opt/vpn-agent/agent.crt https://127.0.0.1:8443/metrics -H "X-Agen
 
 **On the control plane (Render):**
 
-1. The node's **public** cert is committed at `certs/us-nyc-01-agent.crt`. Set
-   `NODE_EXTRA_CA_CERTS=/opt/render/project/src/certs/us-nyc-01-agent.crt` (Node's
-   `fetch`/undici honors it) and redeploy. This only adds trust — behavior is
-   unchanged while `agent_url` is still `http://`.
+Trust is **code-based**, not env-based: `services/provisioner/nodeHttp.js` loads
+every `certs/*.crt` and uses them as the `ca` for node-agent calls (via the
+built-in `https` module, so it works on any Node version — unlike
+`NODE_EXTRA_CA_CERTS` + `fetch`, which is only honored on Node ≥ 20.6). The
+node's **public** cert is committed at `certs/us-nyc-01-agent.crt`, so trust
+ships with the code. `http://` agent_urls keep working (the `ca` is ignored).
+
+1. Push the repo so Render deploys the committed cert + `nodeHttp.js`. No env var
+   needed. This changes nothing yet — `agent_url` is still `http://`.
 2. Flip the node's `agent_url` to HTTPS:
    ```sql
    UPDATE servers SET agent_url = 'https://192.34.58.185:8443' WHERE id = 'us-nyc-01';
    ```
 3. Confirm a `POST /v1/sessions` still succeeds. To roll back instantly, set
    `agent_url` back to `http://192.34.58.185:8080`.
+
+To add another node later, commit its agent's public cert to `certs/` and it's
+trusted automatically.
 
 Once HTTPS is confirmed, you may drop plain HTTP: remove `8080` from
 `portfilter.nft` (leaving `8443`) and re-run `nft -f …`. The cert is self-signed

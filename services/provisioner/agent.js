@@ -18,6 +18,8 @@
  * verified against the running node agent's contract).
  */
 
+const { requestJson } = require('./nodeHttp');
+
 const NODE_AGENT_SECRET = process.env.NODE_AGENT_SECRET || '';
 const TIMEOUT_MS = Number(process.env.NODE_AGENT_TIMEOUT_MS || 8000);
 
@@ -26,26 +28,19 @@ async function call(server, method, path, body) {
     throw new Error(`server ${server.id} has provisioner='agent' but no agent_url`);
   }
   const url = `${server.agent_url.replace(/\/$/, '')}${path}`;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    const res = await fetch(url, {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Agent-Secret': NODE_AGENT_SECRET,
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`node agent ${server.id} ${method} ${path} -> ${res.status} ${text}`);
-    }
-    return res.json().catch(() => ({ ok: true }));
-  } finally {
-    clearTimeout(timer);
+  const res = await requestJson(url, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Agent-Secret': NODE_AGENT_SECRET,
+    },
+    body: JSON.stringify(body),
+    timeoutMs: TIMEOUT_MS,
+  });
+  if (!res.ok) {
+    throw new Error(`node agent ${server.id} ${method} ${path} -> ${res.status} ${res.text || ''}`);
   }
+  return res.data ?? { ok: true };
 }
 
 async function addPeer({ server, publicKey, assignedIp, presharedKey, remainingBytes }) {
