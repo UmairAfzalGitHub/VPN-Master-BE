@@ -120,9 +120,10 @@ quotes would become part of the value and break auth.
   passed to `wg` via `execFileSync` (no shell) — no command injection.
 - PSKs are written to a `0600` temp file (never a shell arg) and unlinked.
 - Peers persist across reboot via `wg-quick save`.
-- **Control port is locked to the control plane (done):** TCP `AGENT_PORT`
-  (8080) is firewalled to Render's outbound IP ranges; UDP 51820 (WireGuard)
-  stays open to the world. See "Restricting the control port" below.
+- **Control ports are locked to the control plane (done):** the agent's HTTPS
+  (8443) and HTTP (8080) ports are firewalled (via `ufw`) to Render's outbound
+  IP ranges; UDP 51820 (WireGuard) stays open to the world. See "Restricting the
+  control port" below.
 - **TLS is live (done):** the agent serves HTTPS on `AGENT_TLS_PORT` (8443) with
   a self-signed cert the control plane trusts in code (loads `certs/*.crt`); no
   domain or public CA needed. See "TLS (self-signed, pinned)" below.
@@ -133,69 +134,48 @@ quotes would become part of the value and break auth.
 
 ## Restricting the control port
 
-The agent's HTTP port must only be reachable by the control plane. We enforce it
-with a dedicated `nftables` table (its own hook, `policy accept`, so nothing else
-is touched — SSH, WireGuard, forwarding, NAT and the `wgquota` table are all
-unaffected; only TCP 8080 from a non-allowed source is dropped). Loopback is
-allowed so on-box `curl 127.0.0.1:8080/metrics` checks keep working.
+The agent's control ports must only be reachable by the control plane. **`ufw`
+is the active host firewall** (`default deny incoming`); it's the authority — a
+`drop` there wins even if another table accepts, so **the port must be opened in
+ufw or the control plane's SYNs are silently dropped before TLS even starts.**
 
 Render's static outbound IP ranges come from the service's **Connect → Outbound**
 tab (Pro plan). As of setup: `74.220.48.0/24` and `74.220.56.0/24`.
 
-`/etc/nftables/portfilter.nft` (the add-then-delete pair makes reloads idempotent
-without flushing the global ruleset):
-
-```
-add table inet portfilter
-delete table inet portfilter
-table inet portfilter {
-    chain input {
-        type filter hook input priority 0; policy accept;
-        iif "lo" accept
-        tcp dport { 8080, 8443 } ip saddr { 74.220.48.0/24, 74.220.56.0/24 } accept
-        tcp dport { 8080, 8443 } drop
-    }
-}
-```
-
-Persisted across reboot by a oneshot unit that re-applies only this table:
-
-```ini
-# /etc/systemd/system/agent-portfilter.service
-[Unit]
-Description=Agent control-port firewall (nftables inet portfilter)
-After=network-pre.target
-Wants=network-pre.target
-[Service]
-Type=oneshot
-ExecStart=/usr/sbin/nft -f /etc/nftables/portfilter.nft
-RemainAfterExit=yes
-[Install]
-WantedBy=multi-user.target
-```
-
-Apply / enable:
+Open the agent's TLS port (8443) to those ranges only; SSH (22) and WireGuard
+(51820/udp) stay open to the world:
 
 ```bash
-nft -f /etc/nftables/portfilter.nft
-systemctl enable --now agent-portfilter.service
+ufw allow from 74.220.48.0/24 to any port 8443 proto tcp
+ufw allow from 74.220.56.0/24 to any port 8443 proto tcp
+ufw status                         # 8443 ALLOW from the two ranges; 22, 51820 anywhere
 ```
+ufw rules persist across reboot on their own. (Port 8080 — plain HTTP — is also
+open in ufw from setup; keep it for rollback, or `ufw delete allow 8080/tcp` once
+you're confident on HTTPS.)
 
-**If Render's outbound ranges change** (a plan or region change can do this),
-this filter fails *silently*: no error, but the control plane's calls are dropped
-before they reach the agent. Symptoms — `/v1/usage` stops advancing for connected
-devices, quotas never arm, and new `/v1/sessions` time out talking to the node.
-To diagnose and fix:
+> **Defense-in-depth (optional):** an extra `nftables` table `inet portfilter`
+> (loaded at boot by `agent-portfilter.service`) also scopes 8080/8443 to the
+> Render ranges. It's redundant with the ufw `from`-scoping above; either layer
+> alone suffices. If you keep it, update **both** when the IPs change. To drop it
+> and rely on ufw alone: `systemctl disable --now agent-portfilter.service && nft delete table inet portfilter`.
+
+**If Render's outbound ranges change** (a plan or region change can do this), the
+firewall fails *silently*: no error, but the control plane's calls are dropped
+before they reach the agent. Symptoms — `/v1/usage` stops advancing, quotas never
+arm, `/v1/sessions` returns "Could not reach the VPN node", and a capture shows
+**repeated SYNs to the agent port with no SYN-ACK** (the tell-tale of a firewall
+drop). Diagnose and fix:
 
 ```bash
-# See who is actually being dropped on 8080 (run ~3 min to catch a poll cycle):
-tcpdump -ni eth0 'tcp and dst port 8080 and tcp[tcpflags] & tcp-syn != 0' \
-  | awk '{print $3}' | sed 's/\.[0-9]*$//' | sort | uniq -c | sort -rn
+# Which source IP is actually hitting the agent port (run while a /sessions fires):
+tcpdump -tni eth0 'tcp and dst port 8443 and tcp[tcpflags] & tcp-syn != 0' \
+  | awk '{print $3}' | sed 's/\.[0-9]*$//' | sort -u
 ```
 
-Compare against the service's **Connect → Outbound** ranges, then update the
-`saddr` set in `/etc/nftables/portfilter.nft`, re-run `nft -f /etc/nftables/portfilter.nft`
-(the change persists), and confirm a `/v1/sessions` succeeds again.
+Compare against **Connect → Outbound**, then re-issue the `ufw allow from … 8443`
+rules for the new ranges (and update the `portfilter` set if you kept it), and
+confirm a `/v1/sessions` succeeds again.
 
 ## TLS (self-signed, pinned)
 
@@ -224,6 +204,10 @@ mkdir -p /etc/systemd/system/vpn-agent.service.d
 printf '[Service]\nEnvironment=TLS_CERT_FILE=/opt/vpn-agent/agent.crt\nEnvironment=TLS_KEY_FILE=/opt/vpn-agent/agent.key\nEnvironment=AGENT_TLS_PORT=8443\n' \
   > /etc/systemd/system/vpn-agent.service.d/tls.conf
 systemctl daemon-reload && systemctl restart vpn-agent
+
+# open 8443 to Render in ufw (REQUIRED — see "Restricting the control port")
+ufw allow from 74.220.48.0/24 to any port 8443 proto tcp
+ufw allow from 74.220.56.0/24 to any port 8443 proto tcp
 
 # verify on the box (cert is valid for 127.0.0.1 too)
 curl --cacert /opt/vpn-agent/agent.crt https://127.0.0.1:8443/metrics -H "X-Agent-Secret: <secret>"
