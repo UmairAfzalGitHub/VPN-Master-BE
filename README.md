@@ -97,9 +97,9 @@ with the node, not in this repo.
 
 ## TODO / operational notes
 
-- [ ] **Postgres is on Render's free tier — free databases are deleted after 30
-      days.** Before relying on it for anything real, upgrade `vpn-master-db` to a
-      paid instance (or recreate + re-run migrations). Data is lost on expiry.
+- [x] **Render is on a paid tier** — the web service and `vpn-master-db` Postgres
+      are both paid, so there are no cold starts and the database persists (no more
+      30-day free-tier expiry). Data survives across deploys.
 - [ ] Set real `TERMS_URL` / `PRIVACY_URL` (Settings + onboarding links).
 - [ ] Rotate `API_KEYS` / `JWT_SECRET` off any values shared during setup.
 - [x] Stand up at least one real WireGuard node + agent and flip its `servers`

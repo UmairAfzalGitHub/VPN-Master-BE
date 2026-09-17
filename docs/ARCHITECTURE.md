@@ -278,6 +278,7 @@ internet, and peers persisted via `wg-quick save` so they survive a reboot.
 - 🔲 Device tokens adopted client-side (quota per-device, not per-keypair)
 - 🔲 IAP receipt validation for Premium
 - 🔲 Trim the 3 placeholder servers (only `us-nyc-01` is a real node)
-- 🔲 Upgrade Render off free tier (no cold starts); agent behind HTTPS
+- ✅ Render on a paid tier — web service + Postgres both paid (no cold starts,
+  Postgres persists); agent behind HTTPS (`us-nyc-01` on `https://…:8443`)
 
 See `BACKEND.md` for the full spec and `README.md` for run/deploy details.

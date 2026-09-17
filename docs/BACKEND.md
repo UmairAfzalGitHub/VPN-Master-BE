@@ -52,13 +52,15 @@ unchanged.
 - 🔲 **`POST /v1/purchases/validate`** — IAP receipt validation, Premium (§2.6).
 - 🔲 **More real regions** — only `us-nyc-01` is live; `gb-lon-01`, `de-fra-01`,
   `sg-sin-01` still point at `*.vpnmaster.example.net` and are mock/unreachable.
-- 🔲 **Client-side gaps (§8)** — done: `X-API-Key`, live `baseURL`, device
-  `Bearer` token, token-keyed `/usage`. Remaining: `/sessions/close` on
-  disconnect, default-server persistence, near-cap warning + quota-exceeded
-  upsell UI.
-- 🔲 **Production hardening** — free Render Postgres expires in 30 days; real
-  Terms/Privacy URLs; rate-limiting `/sessions`; rotating setup secrets; restrict
-  the agent's TCP port to the control plane + put it behind TLS.
+- ✅ **Client-side gaps (§8)** — all closed: `X-API-Key`, live `baseURL`, device
+  `Bearer` token, token-keyed `/usage`, `POST /sessions/close` on disconnect,
+  default-server persistence (last server restored on launch), and the near-cap
+  warning + data-limit upsell UI (Home banner + upgrade CTA on a 403 quota
+  refusal). Client work lives in the `VPN-Master-iOS` repo.
+- 🔲 **Production hardening** — remaining: real Terms/Privacy URLs; rate-limiting
+  `/sessions`; rotating setup secrets. Done: Render web service + Postgres are on
+  a paid tier (no cold starts, Postgres persists — no more 30-day expiry); the
+  agent's TCP port is restricted to the control plane and served over TLS.
 
 See `README.md` for run/deploy details and the per-file layout.
 
