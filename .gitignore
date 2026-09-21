@@ -141,3 +141,6 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Node provisioning state (contains node IPs / pubkeys — local only)
+scripts/.state/
