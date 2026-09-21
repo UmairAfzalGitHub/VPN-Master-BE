@@ -71,7 +71,11 @@ pools would collide tunnel IPs across nodes.
 | `10.11.0.0/16` | `de-fra-01` (Frankfurt) |
 | `10.12.0.0/16` | `sg-sin-01` (Singapore) |
 | `10.13.0.0/16` | `gb-lon-01` (London) |
-| `10.14.0.0/16` | ← next free — use this for your new node |
+| `10.14.0.0/16` | `ca-tor-01` (Toronto) — coming soon |
+| `10.15.0.0/16` | `nl-ams-01` (Amsterdam) — coming soon |
+| `10.16.0.0/16` | `au-syd-01` (Sydney) — coming soon |
+| `10.17.0.0/16` | `us-sfo-01` (San Francisco) — coming soon |
+| `10.18.0.0/16` | ← next free — use this for your new node |
 
 > **When you add a node, update this table** in the same commit as the
 > migration, so the next person doesn't reuse your subnet.
