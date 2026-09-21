@@ -69,8 +69,8 @@ pools would collide tunnel IPs across nodes.
 |---|---|
 | `10.8.0.0/16` | `us-nyc-01` (New York) |
 | `10.11.0.0/16` | `de-fra-01` (Frankfurt) |
-| `10.12.0.0/16` | ← next free — use this for your new node |
-| `10.13.0.0/16` | free |
+| `10.12.0.0/16` | `sg-sin-01` (Singapore) |
+| `10.13.0.0/16` | ← next free — use this for your new node |
 | `10.14.0.0/16` | free |
 
 > **When you add a node, update this table** in the same commit as the
