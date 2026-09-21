@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Runbook — Adding a New WireGuard Server · VPN Master</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --surface-2: #f0f2f5;
+    --ink: #1c2430;
+    --ink-muted: #5c6673;
+    --ink-subtle: #8a94a2;
+    --border: #e2e6ec;
+    --border-strong: #cfd5de;
+    --accent: #2f6df6;
+    --accent-soft: #e8f0ff;
+    --code-bg: #0f1722;
+    --code-ink: #d7e0ec;
+    --code-comment: #6f8296;
+    --info-bg: #eef4ff;   --info-bd: #b9d0ff;   --info-ink: #1c3d7a;
+    --warn-bg: #fff6e6;   --warn-bd: #ffd591;   --warn-ink: #7a4d00;
+    --danger-bg: #fdecec; --danger-bd: #f5b5b5; --danger-ink: #8a1f1f;
+    --ok-bg: #e9f8ef;     --ok-bd: #a9e2c1;     --ok-ink: #14603a;
+    --mac: #7b61ff; --droplet: #17a2b8; --sql: #d6336c; --render: #f0883e;
+    --sidebar-w: 288px;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0d1117; --surface: #161b22; --surface-2: #1c2330;
+      --ink: #e6edf3; --ink-muted: #9aa7b4; --ink-subtle: #6e7b8a;
+      --border: #262d38; --border-strong: #333b48;
+      --accent: #58a6ff; --accent-soft: #10233f;
+      --code-bg: #0a0f16; --code-ink: #d7e0ec; --code-comment: #5f7186;
+      --info-bg: #10233f; --info-bd: #1f4b8a; --info-ink: #9dc3ff;
+      --warn-bg: #33280f; --warn-bd: #6b5115; --warn-ink: #f2cf7d;
+      --danger-bg: #3a1717; --danger-bd: #6e2a2a; --danger-ink: #ffb3b3;
+      --ok-bg: #102b1d; --ok-bd: #1f5c3c; --ok-ink: #7fe0a8;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0d1117; --surface: #161b22; --surface-2: #1c2330;
+    --ink: #e6edf3; --ink-muted: #9aa7b4; --ink-subtle: #6e7b8a;
+    --border: #262d38; --border-strong: #333b48;
+    --accent: #58a6ff; --accent-soft: #10233f;
+    --code-bg: #0a0f16; --code-ink: #d7e0ec; --code-comment: #5f7186;
+    --info-bg: #10233f; --info-bd: #1f4b8a; --info-ink: #9dc3ff;
+    --warn-bg: #33280f; --warn-bd: #6b5115; --warn-ink: #f2cf7d;
+    --danger-bg: #3a1717; --danger-bd: #6e2a2a; --danger-ink: #ffb3b3;
+    --ok-bg: #102b1d; --ok-bd: #1f5c3c; --ok-ink: #7fe0a8;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* Layout */
+  .layout { display: flex; align-items: flex-start; }
+  .sidebar {
+    width: var(--sidebar-w); flex: 0 0 var(--sidebar-w);
+    position: sticky; top: 0; height: 100vh; overflow-y: auto;
+    background: var(--surface); border-right: 1px solid var(--border);
+    padding: 24px 18px 40px;
+  }
+  .content {
+    flex: 1 1 auto; min-width: 0;
+    max-width: 900px; margin: 0 auto; padding: 40px 32px 120px;
+  }
+
+  /* Sidebar */
+  .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .brand .dot { width: 30px; height: 30px; border-radius: 9px;
+    background: linear-gradient(135deg, var(--accent), #8a5cff);
+    display: grid; place-items: center; color: #fff; font-size: 15px; flex: 0 0 auto; }
+  .brand h2 { font-size: 15px; margin: 0; letter-spacing: .2px; }
+  .brand small { display: block; color: var(--ink-subtle); font-weight: 500; font-size: 11.5px; }
+  .toc { list-style: none; margin: 18px 0 0; padding: 0; font-size: 13.5px; }
+  .toc li { margin: 1px 0; }
+  .toc .group {
+    text-transform: uppercase; letter-spacing: 1px; font-size: 10.5px;
+    color: var(--ink-subtle); font-weight: 700; margin: 18px 0 6px; padding: 0 10px;
+  }
+  .toc a {
+    display: block; padding: 6px 10px; border-radius: 8px;
+    color: var(--ink-muted); font-weight: 500; border-left: 2px solid transparent;
+  }
+  .toc a:hover { background: var(--surface-2); text-decoration: none; color: var(--ink); }
+  .toc a.active { background: var(--accent-soft); color: var(--accent);
+    border-left-color: var(--accent); font-weight: 600; }
+  .toc a .num { color: var(--ink-subtle); font-variant-numeric: tabular-nums;
+    margin-right: 7px; font-weight: 600; }
+  .toc a.active .num { color: var(--accent); }
+
+  /* Header block */
+  .page-head { border-bottom: 1px solid var(--border); padding-bottom: 22px; margin-bottom: 30px; }
+  h1 { font-size: 30px; line-height: 1.2; margin: 0 0 12px; letter-spacing: -.4px; }
+  .lede { color: var(--ink-muted); font-size: 16px; margin: 0; }
+  .lede code { font-size: 14px; }
+
+  h2 { font-size: 21px; margin: 46px 0 14px; padding-top: 10px; letter-spacing: -.2px;
+    scroll-margin-top: 20px; }
+  h2 .anchor, h3 .anchor { opacity: 0; color: var(--ink-subtle); margin-left: 8px;
+    font-weight: 400; font-size: .8em; text-decoration: none; }
+  h2:hover .anchor, h3:hover .anchor { opacity: 1; }
+  h3 { font-size: 16.5px; margin: 30px 0 10px; scroll-margin-top: 20px; }
+  .half-banner {
+    margin: 54px 0 8px; padding: 14px 20px; border-radius: 12px;
+    background: linear-gradient(135deg, var(--accent), #7d54ff); color: #fff;
+    font-size: 18px; font-weight: 700; letter-spacing: .3px;
+    display: flex; align-items: center; gap: 12px; scroll-margin-top: 20px;
+  }
+  .half-banner .tag { background: rgba(255,255,255,.22); border-radius: 20px;
+    padding: 3px 12px; font-size: 12px; font-weight: 600; letter-spacing: .5px; }
+
+  p { margin: 12px 0; }
+  strong { color: var(--ink); font-weight: 650; }
+
+  /* Inline code */
+  code {
+    font-family: var(--mono); font-size: 13px;
+    background: var(--surface-2); color: var(--ink);
+    padding: 2px 6px; border-radius: 6px; border: 1px solid var(--border);
+    word-break: break-word;
+  }
+
+  /* Code blocks */
+  .code-wrap { position: relative; margin: 16px 0; }
+  .code-loc {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+    color: #fff; padding: 4px 11px; border-radius: 8px 8px 0 0;
+  }
+  .loc-mac { background: var(--mac); }
+  .loc-droplet { background: var(--droplet); }
+  .loc-sql { background: var(--sql); }
+  pre {
+    margin: 0; background: var(--code-bg); color: var(--code-ink);
+    padding: 16px 18px; border-radius: 0 10px 10px 10px; overflow-x: auto;
+    font-family: var(--mono); font-size: 13px; line-height: 1.65;
+    border: 1px solid var(--border-strong);
+  }
+  .code-wrap.no-loc pre { border-radius: 10px; }
+  pre code { background: none; border: none; padding: 0; color: inherit; font-size: inherit; }
+  pre .c { color: var(--code-comment); }
+  .copy-btn {
+    position: absolute; top: 6px; right: 8px;
+    background: rgba(255,255,255,.08); color: #cdd6e0; border: 1px solid rgba(255,255,255,.14);
+    border-radius: 7px; padding: 4px 10px; font-size: 11.5px; font-weight: 600;
+    cursor: pointer; font-family: var(--sans); transition: all .15s; z-index: 2;
+  }
+  .copy-btn:hover { background: rgba(255,255,255,.16); color: #fff; }
+  .copy-btn.copied { background: var(--ok-ink); color: #fff; border-color: transparent; }
+
+  /* Tables */
+  .table-scroll { overflow-x: auto; margin: 18px 0; border: 1px solid var(--border);
+    border-radius: 12px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--border);
+    vertical-align: top; }
+  th { background: var(--surface-2); font-weight: 650; color: var(--ink);
+    font-size: 12px; text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: var(--surface-2); }
+  td code, th code { font-size: 12.5px; }
+  .free { color: var(--ok-ink); font-weight: 600; }
+  .next { color: var(--accent); font-weight: 700; }
+
+  /* Callouts */
+  .callout {
+    margin: 18px 0; padding: 13px 16px 13px 16px; border-radius: 10px;
+    border: 1px solid; border-left-width: 4px; font-size: 14px;
+  }
+  .callout p { margin: 6px 0; }
+  .callout p:first-child { margin-top: 0; } .callout p:last-child { margin-bottom: 0; }
+  .callout .lbl { font-weight: 700; display: block; margin-bottom: 4px; font-size: 13px;
+    letter-spacing: .3px; }
+  .c-info { background: var(--info-bg); border-color: var(--info-bd); color: var(--info-ink); }
+  .c-warn { background: var(--warn-bg); border-color: var(--warn-bd); color: var(--warn-ink); }
+  .c-danger { background: var(--danger-bg); border-color: var(--danger-bd); color: var(--danger-ink); }
+  .c-ok { background: var(--ok-bg); border-color: var(--ok-bd); color: var(--ok-ink); }
+  .callout code { background: rgba(127,127,127,.14); border-color: transparent; color: inherit; }
+
+  ul, ol { margin: 12px 0; padding-left: 24px; }
+  li { margin: 5px 0; }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+
+  /* ASCII diagram */
+  .diagram { background: var(--code-bg); color: var(--code-ink); border-radius: 12px;
+    padding: 20px; overflow-x: auto; font-family: var(--mono); font-size: 12.5px;
+    line-height: 1.7; border: 1px solid var(--border-strong); margin: 18px 0; white-space: pre; }
+
+  /* Theme toggle */
+  .theme-btn {
+    position: fixed; bottom: 20px; right: 20px; z-index: 50;
+    background: var(--surface); border: 1px solid var(--border-strong); color: var(--ink);
+    width: 44px; height: 44px; border-radius: 50%; cursor: pointer; font-size: 18px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.12);
+  }
+
+  /* Mobile */
+  .menu-btn { display: none; }
+  @media (max-width: 900px) {
+    .layout { display: block; }
+    .sidebar {
+      position: fixed; left: 0; top: 0; z-index: 40; height: 100vh; width: 82%;
+      max-width: 320px; transform: translateX(-102%); transition: transform .25s ease;
+      box-shadow: 4px 0 24px rgba(0,0,0,.18);
+    }
+    .sidebar.open { transform: translateX(0); }
+    .content { padding: 72px 16px 100px; max-width: 100%; }
+    .menu-btn {
+      display: flex; align-items: center; gap: 8px; position: fixed; top: 12px; left: 12px;
+      z-index: 45; background: var(--surface); border: 1px solid var(--border-strong);
+      color: var(--ink); border-radius: 10px; padding: 8px 14px; font-weight: 600;
+      font-family: var(--sans); font-size: 14px; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.1);
+    }
+    .scrim { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 39; }
+    .scrim.show { display: block; }
+    h1 { font-size: 24px; }
+  }
+</style>
+</head>
+<body>
+
+<button class="menu-btn" id="menuBtn">☰ Contents</button>
+<div class="scrim" id="scrim"></div>
+
+<div class="layout">
+  <!-- SIDEBAR -->
+  <nav class="sidebar" id="sidebar">
+    <div class="brand">
+      <div class="dot">🔐</div>
+      <div>
+        <h2>Add a WireGuard Server</h2>
+        <small>VPN Master · Runbook</small>
+      </div>
+    </div>
+    <ul class="toc" id="toc">
+      <li class="group">Orientation</li>
+      <li><a href="#mental-model"><span class="num">0</span>The mental model</a></li>
+      <li><a href="#before"><span class="num">1</span>Before you start</a></li>
+      <li><a href="#subnets"><span class="num">2</span>Subnet registry</a></li>
+
+      <li class="group">Half A — The Droplet</li>
+      <li><a href="#a1"><span class="num">A1</span>Create the droplet</a></li>
+      <li><a href="#a2"><span class="num">A2</span>Base packages + forwarding</a></li>
+      <li><a href="#a3"><span class="num">A3</span>Keypair + wg0</a></li>
+      <li><a href="#a4"><span class="num">A4</span>Deploy the node-agent</a></li>
+      <li><a href="#a5"><span class="num">A5</span>TLS cert</a></li>
+      <li><a href="#a6"><span class="num">A6</span>systemd unit</a></li>
+      <li><a href="#a7"><span class="num">A7</span>Firewall</a></li>
+      <li><a href="#a8"><span class="num">A8</span>Smoke-test the agent</a></li>
+
+      <li class="group">Half B — Control Plane</li>
+      <li><a href="#b1"><span class="num">B1</span>Commit the cert</a></li>
+      <li><a href="#b2"><span class="num">B2</span>Write the migration</a></li>
+      <li><a href="#b3"><span class="num">B3</span>Commit + deploy</a></li>
+      <li><a href="#b4"><span class="num">B4</span>Verify end-to-end</a></li>
+
+      <li class="group">Operations</li>
+      <li><a href="#rollback"><span class="num">↩</span>Rollback</a></li>
+      <li><a href="#troubleshooting"><span class="num">🔧</span>Troubleshooting</a></li>
+      <li><a href="#cheatsheet"><span class="num">≡</span>Cheat sheet</a></li>
+    </ul>
+  </nav>
+
+  <!-- CONTENT -->
+  <main class="content">
+    <div class="page-head">
+      <h1>Adding a New WireGuard Server</h1>
+      <p class="lede">A complete, copy-paste-able guide to add a new VPN region (a real WireGuard node)
+        to VPN Master. Written from the real bring-up of <strong><code>de-fra-01</code> (Frankfurt)</strong>
+        — every command here was actually run.</p>
+    </div>
+
+    <div class="callout c-info">
+      <span class="lbl">👤 Who this is for</span>
+      <p>You, months from now, adding London or Singapore and having forgotten every detail.
+      Follow it top to bottom; don't skip the verification or the gotchas.</p>
+    </div>
+
+    <!-- 0 -->
+    <h2 id="mental-model">0 · The mental model <span style="font-size:14px;color:var(--ink-subtle);font-weight:500">(read this first)</span> <a class="anchor" href="#mental-model">#</a></h2>
+    <p>There are <strong>three planes</strong>. Adding a server touches two of them:</p>
+    <div class="diagram">📱 iPhone ──HTTPS──▶ ☁️ Control plane (this repo, on Render)  ──HTTPS/TLS──▶ 🖥️ Droplet (the node)
+                     nyx-edge.onrender.com                                    agent :8443 + wg0 :51820
+   │                                                                              ▲
+   └──────────────── encrypted WireGuard tunnel (UDP 51820) ─────────────────────┘
+                     THE ACTUAL VPN — never touches Render</div>
+    <ul>
+      <li><strong>Control plane</strong> (Render) — owns the Postgres <code>servers</code> catalog,
+        allocates tunnel IPs, and drives each node's agent over TLS. Never carries VPN traffic.</li>
+      <li><strong>The node</strong> (a DigitalOcean droplet) — runs WireGuard (<code>wg0</code>) + the
+        <strong>node-agent</strong> (<code>node-agent/index.js</code>) on <code>:8443</code> HTTPS. This is the real VPN.</li>
+      <li><strong>The phone</strong> — builds the encrypted tunnel straight to the droplet.</li>
+    </ul>
+    <div class="callout c-ok">
+      <p><strong>Adding a server = stand up a new droplet exactly like an existing one, then register it
+      in Postgres with a migration.</strong> That's it.</p>
+    </div>
+    <h3>The work splits in two halves</h3>
+    <ul>
+      <li><strong>Half A — the droplet</strong> (steps A1–A8): SSH work on a brand-new Linux host.</li>
+      <li><strong>Half B — the control plane</strong> (steps B1–B4): a migration + a committed cert in this repo, then a push to deploy.</li>
+    </ul>
+
+    <!-- 1 -->
+    <h2 id="before">1 · Before you start <span style="font-size:14px;color:var(--ink-subtle);font-weight:500">— the values you'll need</span> <a class="anchor" href="#before">#</a></h2>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Value</th><th>What it is</th><th>Where to get it</th><th>Where it goes</th></tr></thead>
+        <tbody>
+          <tr><td><strong>SSH key</strong></td><td>Your DigitalOcean SSH private key</td>
+            <td><code>~/.ssh/digitalocean_vpn_master</code> on your Mac</td><td>Every <code>ssh</code>/<code>scp</code> to the droplet</td></tr>
+          <tr><td><strong><code>NODE_AGENT_SECRET</code></strong></td><td>Shared secret between control plane and every agent</td>
+            <td>Render → VPN-Master-BE → Environment → <code>NODE_AGENT_SECRET</code></td>
+            <td>The droplet's systemd unit (<code>AGENT_SECRET=</code>). <strong>Same value on every node.</strong></td></tr>
+          <tr><td><strong><code>API_KEYS</code></strong> (app key)</td><td>The <code>X-API-Key</code> the app + your curl tests send</td>
+            <td>Render → VPN-Master-BE → Environment → <code>API_KEYS</code></td><td>Only used in verification curls. Not on the droplet.</td></tr>
+          <tr><td><strong>Node WG public key</strong></td><td>The node's WG public key (generated in A3)</td>
+            <td>Output of <code>cat server.pub</code> on the droplet</td><td>The Postgres <code>servers</code> row (<code>public_key</code>)</td></tr>
+          <tr><td><strong>Node IP</strong></td><td>The droplet's public IP</td>
+            <td>DigitalOcean dashboard when you create it</td><td><code>endpoint</code>, <code>agent_url</code>, the TLS cert SAN, ufw</td></tr>
+          <tr><td><strong>Tunnel subnet</strong></td><td>The node's private IP pool (<strong>unique per node</strong>)</td>
+            <td>Pick the next free one — see §2</td><td><code>wg0.conf</code> Address + the Postgres row</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout c-warn">
+      <span class="lbl">⚠️ The three things that MUST be unique per node</span>
+      <p>The <strong>IP</strong>, the <strong>WireGuard keypair</strong>, and the <strong>tunnel subnet</strong>.
+      Everything else (the agent secret, the app key, the agent code) is shared/identical across nodes.</p>
+    </div>
+    <div class="callout c-info">
+      <p><strong>Control-plane primary URL:</strong> <code>https://nyx-edge.onrender.com</code> — the hostname is
+      deliberately neutral (no "vpn") to dodge SNI-based DPI. It is <strong>not</strong>
+      <code>vpn-master-be.onrender.com</code> (that doesn't resolve).</p>
+    </div>
+
+    <!-- 2 -->
+    <h2 id="subnets">2 · Subnet registry <span style="font-size:14px;color:var(--danger-ink);font-weight:600">(CRITICAL)</span> <a class="anchor" href="#subnets">#</a></h2>
+    <p>Every node needs its own <code>10.x.0.0/16</code>. <strong>Never reuse a subnet</strong> — overlapping
+      pools would collide tunnel IPs across nodes.</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Subnet</th><th>Node</th></tr></thead>
+        <tbody>
+          <tr><td><code>10.8.0.0/16</code></td><td><code>us-nyc-01</code> (New York)</td></tr>
+          <tr><td><code>10.11.0.0/16</code></td><td><code>de-fra-01</code> (Frankfurt)</td></tr>
+          <tr><td><code>10.12.0.0/16</code></td><td><code>sg-sin-01</code> (Singapore)</td></tr>
+          <tr><td><code>10.13.0.0/16</code></td><td class="next">← next free — use this for your new node</td></tr>
+          <tr><td><code>10.14.0.0/16</code></td><td class="free">free</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="callout c-warn">
+      <p><strong>When you add a node, update this table</strong> in the same commit as the migration,
+      so the next person doesn't reuse your subnet.</p>
+    </div>
+    <p>Throughout this runbook the <strong>worked example</strong> uses placeholders you replace:</p>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Placeholder</th><th>Example (Frankfurt)</th><th>Yours</th></tr></thead>
+        <tbody>
+          <tr><td><code>&lt;SERVER_ID&gt;</code></td><td><code>de-fra-01</code></td><td>e.g. <code>gb-lon-01</code></td></tr>
+          <tr><td><code>&lt;NODE_IP&gt;</code></td><td><code>164.90.168.100</code></td><td>your droplet IP</td></tr>
+          <tr><td><code>&lt;SUBNET&gt;</code></td><td><code>10.11.0.0/16</code></td><td>next free from §2</td></tr>
+          <tr><td><code>&lt;SUBNET_GW&gt;</code></td><td><code>10.11.0.1/16</code></td><td><code>.1</code> of your subnet</td></tr>
+          <tr><td><code>&lt;CN&gt;</code></td><td><code>vpn-agent-de-fra-01</code></td><td><code>vpn-agent-&lt;SERVER_ID&gt;</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- HALF A -->
+    <div class="half-banner" id="half-a"><span class="tag">HALF A</span> Stand up the droplet</div>
+
+    <h2 id="a1">A1 · Create the droplet <a class="anchor" href="#a1">#</a></h2>
+    <p><em>(DigitalOcean dashboard, or <code>doctl</code>)</em></p>
+    <p><strong>Dashboard (recommended):</strong> <a href="https://cloud.digitalocean.com/droplets/new" target="_blank" rel="noopener">cloud.digitalocean.com/droplets/new</a></p>
+    <ul>
+      <li><strong>Region:</strong> the city you're adding (e.g. Frankfurt → <code>de-fra-01</code>).</li>
+      <li><strong>Image:</strong> Ubuntu 24.04 LTS.</li>
+      <li><strong>Size:</strong> the smallest Basic/Regular ($4–6/mo) — WireGuard is light.</li>
+      <li><strong>Authentication:</strong> SSH key → select your <code>digitalocean_vpn_master</code> key.</li>
+      <li>Create it, then <strong>copy the public IP</strong> → this is <code>&lt;NODE_IP&gt;</code>.</li>
+    </ul>
+    <p><strong>CLI alternative (<code>doctl</code>):</strong></p>
+    <div class="code-wrap" data-loc="mac"><pre><code><span class="c"># ON YOUR MAC</span>
+brew install doctl &amp;&amp; doctl auth init            <span class="c"># paste a DO API token</span>
+doctl compute ssh-key list                       <span class="c"># note your key's fingerprint</span>
+doctl compute region list                        <span class="c"># e.g. fra1, lon1, sgp1</span>
+doctl compute droplet create &lt;SERVER_ID&gt; \
+  --region fra1 --image ubuntu-24-04-x64 --size s-1vcpu-1gb \
+  --ssh-keys &lt;FINGERPRINT&gt; --wait</code></pre></div>
+    <p>Confirm you can get in (accepts the host key the first time):</p>
+    <div class="code-wrap" data-loc="mac"><pre><code><span class="c"># ON YOUR MAC</span>
+ssh -i ~/.ssh/digitalocean_vpn_master root@&lt;NODE_IP&gt;</code></pre></div>
+
+    <h2 id="a2">A2 · Base packages + IP forwarding <a class="anchor" href="#a2">#</a></h2>
+    <div class="code-wrap" data-loc="droplet"><pre><code><span class="c"># ON THE DROPLET</span>
+apt-get update &amp;&amp; apt-get install -y wireguard nftables nodejs npm
+echo 'net.ipv4.ip_forward=1' &gt; /etc/sysctl.d/99-wg.conf &amp;&amp; sysctl --system</code></pre></div>
+    <p><code>net.ipv4.ip_forward=1</code> is what lets the box route tunnel traffic out to the internet.
+      <code>sysctl --system</code> applies it immediately and it persists across reboot.</p>
+
+    <h2 id="a3">A3 · WireGuard keypair + <code>wg0</code> interface <a class="anchor" href="#a3">#</a></h2>
+    <p><strong>Generate the keypair:</strong></p>
+    <div class="code-wrap" data-loc="droplet"><pre><code><span class="c"># ON THE DROPLET</span>
+cd /etc/wireguard
+umask 077
+wg genkey | tee server.key | wg pubkey &gt; server.pub
+cat server.pub</code></pre></div>
+    <div class="callout c-warn">
+      <p>👉 <strong>Save the <code>cat server.pub</code> output</strong> — it's the node's WireGuard
+      <strong>public</strong> key and goes in the Postgres row (<code>public_key</code>) in Half B. The
+      <strong>private</strong> key (<code>server.key</code>) never leaves the droplet.</p>
+    </div>
+    <p><strong>Find your network interface</strong> (almost always <code>eth0</code>):</p>
+    <div class="code-wrap" data-loc="droplet"><pre><code><span class="c"># ON THE DROPLET</span>
+ip route | grep default        <span class="c"># look at the word after "dev" — e.g. eth0</span></code></pre></div>
+    <p>If it's not <code>eth0</code>, substitute your interface name in the config below.</p>
+    <p><strong>Write <code>wg0.conf</code></strong> — this exact PostUp/PostDown is what the working nodes use. The two <code>iptables</code> rules are essential:</p>
+    <ul>
+      <li><code>iptables -I FORWARD 1 -i wg0 -j ACCEPT</code> — allows tunnel traffic to be forwarded
+        (inserted at the <strong>top</strong> so it beats ufw's default-DROP forward policy — see the gotcha in <a href="#t2">T2</a>).</li>
+      <li><code>iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE</code> — NATs tunnel traffic out to the internet.</li>
+    </ul>
+    <div class="code-wrap" data-loc="droplet"><pre><code><span class="c"># ON THE DROPLET — this reads server.key and writes the file in one shot</span>
+cat &gt; /etc/wireguard/wg0.conf &lt;&lt;EOF
+[Interface]
+Address = &lt;SUBNET_GW&gt;
+PostUp = iptables -I FORWARD 1 -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+ListenPort = 51820
+PrivateKey = $(cat /etc/wireguard/server.key)
+EOF</code></pre></div>
+    <div class="callout c-info">
+      <p>Replace <code>&lt;SUBNET_GW&gt;</code> with <code>.1</code> of your subnet, e.g. <code>10.12.0.1/16</code>.
+      Keep the <code>/16</code>. If your interface isn't <code>eth0</code>, change both <code>eth0</code> references.</p>
+    </div>
+    <p><strong>Bring it up and enable on boot:</strong></p>
+    <div class="code-wrap" data-loc="droplet"><pre><code><span class="c"># ON THE DROPLET</span>
+systemctl enable --now wg-quick@wg0
+wg show                                  <span class="c"># expect: interface wg0, port 51820, your pubkey</span>
+iptables -L FORWARD -n -v --line-numbers | head -3   <span class="c"># rule #1 should be: ACCEPT ... in wg0</span>
+iptables -t nat -L POSTROUTING -n -v | grep -i masq  <span class="c"># expect a MASQUERADE line on eth0</span></code></pre></div>
+
+    <h2 id="a4">A4 · Deploy the node-agent code <a class="anchor" href="#a4">#</a></h2>
+    <p><em>(from your Mac — it lives in this repo)</em> The agent is <code>node-agent/index.js</code> in this repo.
+      Copy it to the droplet and install its one dependency:</p>
+    <div class="code-wrap" data-loc="mac"><pre><code><span class="c"># ON YOUR MAC, from the repo root</span>
+ssh -i ~/.ssh/digitalocean_vpn_master root@&lt;NODE_IP&gt; 'mkdir -p /opt/vpn-agent'
+scp -i ~/.ssh/digitalocean_vpn_master node-agent/index.js root@&lt;NODE_IP&gt;:/opt/vpn-agent/index.js
+ssh -i ~/.ssh/digitalocean_vpn_master root@&lt;NODE_IP&gt; 'cd /opt/vpn-agent &amp;&amp; npm i express'</code></pre></div>
+    <div class="callout c-info">
+      <p>When you later change the agent, re-run the <code>scp</code> line + <code>ssh … 'systemctl restart vpn-agent'</code>.</p>
+    </div>
+
+    <h2 id="a5">A5 · TLS cert for the agent <a class="anchor" href="#a5">#</a></h2>
+    <p><em>(on the droplet, then pull to your Mac)</em> The agent serves HTTPS with a <strong>self-signed cert
+      whose SAN is the node's IP</strong> (no domain, no Let's Encrypt needed). The control plane trusts it
+      by shipping the <strong>public</strong> cert in this repo (<code>certs/</code>).</p>
+    <p><strong>Generate on the droplet</strong> (10-year expiry, EC key, IP-SAN pinned to the node):</p>
+    <div class="code-wrap" data-loc="droplet"><pre><code><span class="c"># ON THE DROPLET</span>
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
+  -keyout /opt/vpn-agent/agent.key -out /opt/vpn-agent/agent.crt -days 3650 \
+  -subj "/CN=&lt;CN&gt;" -addext "subjectAltName=IP:&lt;NODE_IP&gt;,IP:127.0.0.1"
+chmod 600 /opt/vpn-agent/agent.key</code></pre></div>
+    <div class="callout c-info">
+      <p><code>&lt;CN&gt;</code> = <code>vpn-agent-&lt;SERVER_ID&gt;</code>, e.g. <code>vpn-agent-gb-lon-01</code>. The SAN
+      <strong>must</strong> include <code>IP:&lt;NODE_IP&gt;</code> (the control plane connects by IP) and
+      <code>IP:127.0.0.1</code> (for the on-box smoke test).</p>
+    </div>
+    <p><strong>Pull the PUBLIC cert into the repo</strong> (you'll commit it in Half B):</p>
+    <div class="code-wrap" data-loc="mac"><pre><code><span class="c"># ON YOUR MAC, from the repo root</span>
+scp -i ~/.ssh/digitalocean_vpn_master root@&lt;NODE_IP&gt;:/opt/vpn-agent/agent.crt certs/&lt;SERVER_ID&gt;-agent.crt
+openssl x509 -in certs/&lt;SERVER_ID&gt;-agent.crt -noout -subject -ext subjectAltName   <span class="c"># sanity check</span></code></pre></div>
+    <div class="callout c-danger">
+      <p>Only <code>agent.crt</code> (public) goes in the repo. <code>agent.key</code> (private) stays on the
+      droplet, <code>0600</code>, never copied anywhere.</p>
+    </div>
+
+    <h2 id="a6">A6 · systemd unit — run the agent as a service <a class="anchor" href="#a6">#</a></h2>
+    <p><em>(on the droplet)</em> This is the <strong>only</strong> step where you paste the shared
+      <code>NODE_AGENT_SECRET</code>. To keep it out of your shell history/screen, write the file with a
+      placeholder, then edit it in place.</p>
+    <p><strong>Write the unit:</strong></p>
+    <div class="code-wrap" data-loc="droplet"><pre><code><span class="c"># ON THE DROPLET</span>
+cat &gt; /etc/systemd/system/vpn-agent.service &lt;&lt;'EOF'
+[Unit]
+Description=VPN Master Node Agent
+After=network.target wg-quick@wg0.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/vpn-agent
+Environment=AGENT_SECRET=PASTE_SECRET_HERE
+Environment=TLS_CERT_FILE=/opt/vpn-agent/agent.crt
+Environment=TLS_KEY_FILE=/opt/vpn-agent/agent.key
+Environment=AGENT_TLS_PORT=8443
+ExecStart=/usr/bin/node index.js
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF</code></pre></div>
+    <p><strong>Insert the real secret</strong> (get it from Render → Environment → <code>NODE_AGENT_SECRET</code>):</p>
+    <div class="code-wrap" data-loc="droplet"><pre><code><span class="c"># ON THE DROPLET</span>
+nano /etc/systemd/system/vpn-agent.service</code></pre></div>
+    <p>In nano: press <code>Ctrl+\</code> (Replace) → search <code>PASTE_SECRET_HERE</code> → replace with the
+      real secret → <code>A</code> for all → <code>Ctrl+O</code>, <code>Enter</code> to save → <code>Ctrl+X</code> to exit.</p>
+    <div class="callout c-danger">
+      <span class="lbl">⚠️ Do NOT quote the secret</span>
+      <p>systemd treats quotes as literal characters, so <code>AGENT_SECRET="abc"</code> makes the secret
+      <code>"abc"</code> (with quotes) and auth fails.</p>
+    </div>
+    <p><strong>Start it and verify:</strong></p>
+    <div class="code-wrap" data-loc="droplet"><pre><code><span class="c"># ON THE DROPLET</span>
+systemctl daemon-reload &amp;&amp; systemctl enable --now vpn-agent
+systemctl status vpn-agent --no-pager           <span class="c"># expect: active (running), enabled</span>
+grep AGENT_SECRET /etc/systemd/system/vpn-agent.service   <span class="c"># NOT still PASTE_SECRET_HERE</span></code></pre></div>
+    <p>If it's crash-looping: <code>journalctl -u vpn-agent -n 30 --no-pager</code> (usually a missing/empty <code>AGENT_SECRET</code>).</p>
+
+    <h2 id="a7">A7 · Firewall — lock the control port to Render <a class="anchor" href="#a7">#</a></h2>
+    <p><em>(on the droplet)</em> The agent's <code>:8443</code> must only be reachable by the control plane.
+      Open it <strong>only</strong> to Render's outbound IP ranges; keep SSH (22) and WireGuard (51820/udp) open to the world.</p>
+    <div class="callout c-warn">
+      <p><strong>Get Render's current outbound ranges</strong> from Render → VPN-Master-BE →
+      <strong>Connect → Outbound</strong> (Pro plan). As of this writing they are <code>74.220.48.0/24</code> and
+      <code>74.220.56.0/24</code>. <strong>If they differ, use what Render shows</strong> — wrong ranges silently
+      drop the control plane (see <a href="#t3">T3</a>).</p>
+    </div>
+    <div class="code-wrap" data-loc="droplet"><pre><code><span class="c"># ON THE DROPLET — allows 22 FIRST so enabling ufw can't lock you out</span>
+ufw allow 22/tcp
+ufw allow 51820/udp
+ufw allow from 74.220.48.0/24 to any port 8443 proto tcp
+ufw allow from 74.220.56.0/24 to any port 8443 proto tcp
+echo y | ufw enable
+ufw status verbose</code></pre></div>
+    <p>Expected <code>ufw status</code>: <code>22/tcp</code> and <code>51820/udp</code> from Anywhere; <code>8443/tcp</code>
+      only from the two Render ranges. ufw rules persist across reboot on their own.</p>
+    <div class="callout c-info">
+      <p>Note: <code>Default: deny (routed)</code> in the status output is fine — the
+      <code>iptables -I FORWARD 1 -i wg0 -j ACCEPT</code> rule from A3 is what permits tunnel forwarding, and it
+      sits above ufw's forward chain.</p>
+    </div>
+
+    <h2 id="a8">A8 · Smoke-test the agent on the box <a class="anchor" href="#a8">#</a></h2>
+    <p><em>(on the droplet)</em> Confirms TLS + the secret + the in-kernel quota table all work locally, before
+      the control plane ever calls it. This one-liner reads the secret from systemd so you don't paste it:</p>
+    <div class="code-wrap" data-loc="droplet"><pre><code><span class="c"># ON THE DROPLET</span>
+SECRET=$(systemctl show vpn-agent -p Environment --value | tr ' ' '\n' | sed -n 's/^AGENT_SECRET=//p')
+curl --cacert /opt/vpn-agent/agent.crt https://127.0.0.1:8443/metrics -H "X-Agent-Secret: $SECRET"
+nft list table inet wgquota</code></pre></div>
+    <p>Expected:</p>
+    <ul>
+      <li>curl → <code>{"peers":[]}</code> (empty is correct — no peers yet).</li>
+      <li><code>nft list table inet wgquota</code> → the <code>wgquota</code> table exists with an empty
+        <code>forward</code> chain, <code>policy accept</code>.</li>
+    </ul>
+    <div class="callout c-ok">
+      <p>✅ <strong>Half A is done.</strong> The droplet is a fully-configured WireGuard node with the agent live on 8443.</p>
+    </div>
+
+    <!-- HALF B -->
+    <div class="half-banner" id="half-b"><span class="tag">HALF B</span> Register the node in the control plane</div>
+
+    <h2 id="b1">B1 · Commit the node's public cert <a class="anchor" href="#b1">#</a></h2>
+    <p><em>(already in the repo from A5)</em> <code>services/provisioner/nodeHttp.js</code> auto-loads
+      <strong>every</strong> <code>certs/*.crt</code> as a trusted CA, so simply having
+      <code>certs/&lt;SERVER_ID&gt;-agent.crt</code> in the repo makes the node trusted after deploy. No env var, no
+      code change. You committed the file in A5 (or will in B3 below).</p>
+
+    <h2 id="b2">B2 · Write the migration <a class="anchor" href="#b2">#</a></h2>
+    <p><em>(on your Mac, in the repo)</em> Migrations are forward-only SQL in
+      <code>db/migrations/NNN_description.sql</code>, applied once each in filename order on every boot
+      (<code>db/migrate.js</code>). Create the next number.</p>
+    <p><strong>If your <code>&lt;SERVER_ID&gt;</code> is already a placeholder seed</strong> (<code>de-fra-01</code>,
+      <code>gb-lon-01</code>, <code>sg-sin-01</code> exist as <code>mock</code> rows from
+      <code>002_seed_servers.sql</code>), it's an <code>UPDATE</code>:</p>
+    <div class="code-wrap" data-loc="sql"><pre><code><span class="c">-- db/migrations/005_activate_gb_lon_01.sql   (bump the number!)</span>
+UPDATE servers
+SET endpoint      = '&lt;NODE_IP&gt;:51820',
+    public_key    = '&lt;the cat server.pub value from A3&gt;',
+    tunnel_subnet = '&lt;SUBNET&gt;',
+    provisioner   = 'agent',
+    agent_url     = 'https://&lt;NODE_IP&gt;:8443',
+    enabled       = true,
+    updated_at    = now()
+WHERE id = '&lt;SERVER_ID&gt;';</code></pre></div>
+    <p><strong>If it's a brand-new region not in the seed</strong>, <code>INSERT</code> the full catalog row:</p>
+    <div class="code-wrap" data-loc="sql"><pre><code><span class="c">-- db/migrations/005_add_xx_yyy_01.sql</span>
+INSERT INTO servers
+  (id, name, country, country_code, city, endpoint, public_key,
+   tunnel_subnet, load, is_premium, provisioner, agent_url, enabled)
+VALUES
+  ('&lt;SERVER_ID&gt;', '&lt;City Name&gt;', '&lt;Country&gt;', '&lt;CC&gt;', '&lt;City&gt;',
+   '&lt;NODE_IP&gt;:51820', '&lt;public_key&gt;', '&lt;SUBNET&gt;', 0.30, false,
+   'agent', 'https://&lt;NODE_IP&gt;:8443', true)
+ON CONFLICT (id) DO UPDATE SET
+  endpoint = EXCLUDED.endpoint, public_key = EXCLUDED.public_key,
+  tunnel_subnet = EXCLUDED.tunnel_subnet, provisioner = EXCLUDED.provisioner,
+  agent_url = EXCLUDED.agent_url, enabled = EXCLUDED.enabled, updated_at = now();</code></pre></div>
+    <div class="callout c-info">
+      <p><code>country_code</code> is ISO 3166-1 alpha-2 (<code>DE</code>, <code>GB</code>, <code>SG</code>) — it drives the flag emoji in the app.</p>
+    </div>
+
+    <h2 id="b3">B3 · Commit + deploy <a class="anchor" href="#b3">#</a></h2>
+    <p><em>(on your Mac)</em> Push to <code>main</code> → Render redeploys and runs the migration on boot.</p>
+    <div class="code-wrap" data-loc="mac"><pre><code><span class="c"># ON YOUR MAC, from the repo root</span>
+git add certs/&lt;SERVER_ID&gt;-agent.crt db/migrations/00N_activate_&lt;server_id&gt;.sql
+git commit -m "servers: activate &lt;SERVER_ID&gt; (real WireGuard node, &lt;City&gt;)"
+git push</code></pre></div>
+    <p>Also update the <a href="#subnets"><strong>§2 subnet registry</strong></a> in this file in the same commit.</p>
+    <p>Watch Render's deploy logs for:</p>
+    <div class="code-wrap no-loc"><pre><code>[db] ✓ 00N_activate_&lt;server_id&gt;.sql
+==&gt; Your service is live 🎉</code></pre></div>
+
+    <h2 id="b4">B4 · Verify end-to-end <a class="anchor" href="#b4">#</a></h2>
+    <p><em>(on your Mac)</em> Replace <code>PASTE_REAL_KEY</code> with the <code>API_KEYS</code> value from Render.</p>
+    <p><strong>1. Catalog shows the real node:</strong></p>
+    <div class="code-wrap" data-loc="mac"><pre><code>curl -sS https://nyx-edge.onrender.com/v1/servers -H 'X-API-Key: PASTE_REAL_KEY' \
+  | jq '.[] | select(.id=="&lt;SERVER_ID&gt;")'</code></pre></div>
+    <p>Expect the real <code>endpoint</code> (<code>&lt;NODE_IP&gt;:51820</code>) and <code>publicKey</code>.</p>
+    <p><strong>2. A real session</strong> (the true proof — exercises the agent over TLS):</p>
+    <div class="code-wrap" data-loc="mac"><pre><code>curl -sS -w '\nHTTP %{http_code}\n' -X POST https://nyx-edge.onrender.com/v1/sessions \
+  -H 'X-API-Key: PASTE_REAL_KEY' -H 'Content-Type: application/json' \
+  -d '{"serverID":"&lt;SERVER_ID&gt;","publicKey":"'"$(head -c32 /dev/urandom | base64)"'"}'</code></pre></div>
+    <p>Expect <code>HTTP 200</code> with <code>assignedAddresses</code> of a <code>&lt;SUBNET first octets&gt;.x</code> and a <code>quota</code> block.</p>
+    <p><strong>3. The peer actually landed in the kernel:</strong></p>
+    <div class="code-wrap" data-loc="mac"><pre><code>ssh -i ~/.ssh/digitalocean_vpn_master root@&lt;NODE_IP&gt; \
+  'wg show wg0 | sed -n "/peer:/,\$p"; nft list table inet wgquota'</code></pre></div>
+    <p>Expect a <code>peer:</code> line with <code>allowed ips: &lt;your allocated IP&gt;/32</code>, and a
+      <code>wgquota</code> table with a <code>q_&lt;ip&gt;</code> quota armed at ~1 GB.</p>
+    <div class="callout c-ok">
+      <p>✅ <strong>The node is production-live.</strong> It now appears as a connectable server in the iOS app
+      (which pulls <code>/v1/servers</code>). The test peer has no handshake, so the reaper auto-removes it within
+      <code>PEER_TTL_MINUTES</code> (30). Nothing to clean up.</p>
+    </div>
+
+    <!-- ROLLBACK -->
+    <h2 id="rollback">↩ Rollback <a class="anchor" href="#rollback">#</a></h2>
+    <p>To pull a node out of rotation instantly (no redeploy needed) — run SQL against the Render Postgres
+      (<code>psql "$DATABASE_URL"</code> or the Render dashboard's DB shell):</p>
+    <div class="code-wrap" data-loc="sql"><pre><code><span class="c">-- take it offline (stays in catalog but /sessions refuses it)</span>
+UPDATE servers SET enabled = false WHERE id = '&lt;SERVER_ID&gt;';
+
+<span class="c">-- OR revert it to a harmless mock (won't call the agent)</span>
+UPDATE servers SET provisioner = 'mock', agent_url = NULL WHERE id = '&lt;SERVER_ID&gt;';</code></pre></div>
+    <p>Then destroy the droplet in DigitalOcean if you're decommissioning it.</p>
+
+    <!-- TROUBLESHOOTING -->
+    <h2 id="troubleshooting">🔧 Troubleshooting <span style="font-size:14px;color:var(--ink-subtle);font-weight:500">— the gotchas we actually hit</span> <a class="anchor" href="#troubleshooting">#</a></h2>
+
+    <h3 id="t1">T1 · <code>HTTP 000</code> from a verification curl</h3>
+    <p>Not an API error — curl got no response at all. Almost always the <strong>wrong URL</strong>: the host is
+      <code>https://nyx-edge.onrender.com</code>, <strong>not</strong> <code>vpn-master-be.onrender.com</code>
+      (that doesn't resolve). Also check the service is "Live" in Render, and run with <code>-sS</code> to see the
+      real error (<code>Could not resolve host</code>, <code>timed out</code>, etc.).</p>
+
+    <h3 id="t2">T2 · Handshake works but no internet through the tunnel</h3>
+    <p>The <code>iptables -I FORWARD 1 -i wg0 -j ACCEPT</code> rule is missing or landed <strong>below</strong>
+      ufw's forward chain. ufw's default forward policy is DROP, so the accept rule must be at the
+      <strong>top</strong> of the <code>FORWARD</code> chain. Verify:</p>
+    <div class="code-wrap" data-loc="droplet"><pre><code><span class="c"># ON THE DROPLET</span>
+iptables -L FORWARD -n -v --line-numbers | head -3   <span class="c"># rule #1 must be ACCEPT in wg0</span></code></pre></div>
+    <p>The <code>-I FORWARD 1</code> (insert at position 1) in the A3 config guarantees this. Also confirm IP
+      forwarding is on (<code>sysctl net.ipv4.ip_forward</code> → <code>= 1</code>) and the <code>MASQUERADE</code>
+      rule exists (<code>iptables -t nat -L POSTROUTING -n -v | grep -i masq</code>).</p>
+
+    <h3 id="t3">T3 · Control plane can't reach the agent (<code>/sessions</code> → "Could not reach the VPN node")</h3>
+    <p>The ufw rule for <code>:8443</code> doesn't match Render's <strong>current</strong> outbound ranges — a
+      Render plan/region change can shift them, and the firewall then drops the control plane
+      <strong>silently</strong> (no error, just no SYN-ACK). Diagnose on the droplet while a <code>/sessions</code> fires:</p>
+    <div class="code-wrap" data-loc="droplet"><pre><code><span class="c"># ON THE DROPLET</span>
+tcpdump -tni eth0 'tcp and dst port 8443 and tcp[tcpflags] &amp; tcp-syn != 0' \
+  | awk '{print $3}' | sed 's/\.[0-9]*$//' | sort -u</code></pre></div>
+    <p>Compare against Render → Connect → Outbound, then re-issue the
+      <code>ufw allow from &lt;range&gt; to any port 8443 proto tcp</code> rules for the new ranges.</p>
+
+    <h3 id="t4">T4 · Logs show <code>poll &lt;SERVER_ID&gt; failed: self-signed certificate</code></h3>
+    <p>Usually <strong>transient</strong>, from Render's zero-downtime deploy: the <em>old</em> instance (which
+      loaded its trusted certs before your new cert existed) briefly polls the new node and fails the TLS check,
+      while the <em>new</em> instance trusts it fine. It stops once the old instance is retired.
+      <strong>If it keeps recurring</strong> after the deploy fully finishes:</p>
+    <ul>
+      <li>Confirm <code>certs/&lt;SERVER_ID&gt;-agent.crt</code> is actually committed and deployed.</li>
+      <li>Confirm the committed cert matches the droplet's live cert:</li>
+    </ul>
+    <div class="code-wrap" data-loc="mac"><pre><code><span class="c"># ON YOUR MAC</span>
+openssl x509 -in certs/&lt;SERVER_ID&gt;-agent.crt -noout -fingerprint -sha256</code></pre></div>
+    <div class="code-wrap" data-loc="droplet"><pre><code><span class="c"># ON THE DROPLET</span>
+openssl x509 -in /opt/vpn-agent/agent.crt -noout -fingerprint -sha256</code></pre></div>
+    <p>The two SHA-256 fingerprints must be identical. If not, re-pull the cert (A5) and re-commit.</p>
+
+    <h3 id="t5">T5 · Agent won't start / auth fails</h3>
+    <p><code>journalctl -u vpn-agent -n 30 --no-pager</code> on the droplet. Most common cause:
+      <code>AGENT_SECRET</code> still says <code>PASTE_SECRET_HERE</code>, is quoted, or doesn't match Render's
+      <code>NODE_AGENT_SECRET</code>. Fix the unit (A6), then:</p>
+    <div class="code-wrap" data-loc="droplet"><pre><code><span class="c"># ON THE DROPLET</span>
+systemctl daemon-reload &amp;&amp; systemctl restart vpn-agent</code></pre></div>
+
+    <!-- CHEAT SHEET -->
+    <h2 id="cheatsheet">≡ Quick reference — one-node cheat sheet <a class="anchor" href="#cheatsheet">#</a></h2>
+    <div class="table-scroll">
+      <table>
+        <tbody>
+          <tr><th>Unique per node</th><td>IP · WireGuard keypair · tunnel subnet (<code>10.x.0.0/16</code>) · cert file</td></tr>
+          <tr><th>Shared / identical</th><td><code>NODE_AGENT_SECRET</code> · <code>API_KEYS</code> · the agent code</td></tr>
+          <tr><th>Ports</th><td><code>22/tcp</code> (SSH, world) · <code>51820/udp</code> (WG, world) · <code>8443/tcp</code> (agent, Render only)</td></tr>
+          <tr><th>Control-plane URL</th><td><code>https://nyx-edge.onrender.com</code></td></tr>
+          <tr><th>Droplet paths</th><td><code>/etc/wireguard/wg0.conf</code> · <code>/opt/vpn-agent/{index.js,agent.crt,agent.key}</code> · <code>/etc/systemd/system/vpn-agent.service</code></td></tr>
+          <tr><th>Repo touches</th><td><code>certs/&lt;SERVER_ID&gt;-agent.crt</code> · <code>db/migrations/NNN_activate_&lt;id&gt;.sql</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <hr>
+    <p style="color:var(--ink-subtle);font-size:13px;">VPN Master · internal operations runbook. Keep the
+      <a href="#subnets">subnet registry</a> current with every node you add.</p>
+  </main>
+</div>
+
+<button class="theme-btn" id="themeBtn" title="Toggle theme">🌓</button>
+
+<script>
+(function () {
+  // --- Location badges on code blocks ---
+  var LABELS = { mac: '💻 On your Mac', droplet: '🖥️ On the droplet', sql: '🗄️ SQL migration' };
+  document.querySelectorAll('.code-wrap[data-loc]').forEach(function (w) {
+    var loc = w.getAttribute('data-loc');
+    if (LABELS[loc]) {
+      var b = document.createElement('span');
+      b.className = 'code-loc loc-' + loc;
+      b.textContent = LABELS[loc];
+      w.insertBefore(b, w.firstChild);
+    }
+  });
+
+  // --- Copy buttons ---
+  document.querySelectorAll('.code-wrap').forEach(function (w) {
+    var pre = w.querySelector('pre');
+    if (!pre) return;
+    var btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.textContent = 'Copy';
+    btn.addEventListener('click', function () {
+      var text = pre.innerText;
+      navigator.clipboard.writeText(text).then(function () {
+        btn.textContent = 'Copied ✓'; btn.classList.add('copied');
+        setTimeout(function () { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1400);
+      });
+    });
+    w.appendChild(btn);
+  });
+
+  // --- Scrollspy ---
+  var links = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
+  var map = {};
+  links.forEach(function (a) {
+    var id = a.getAttribute('href').slice(1);
+    var el = document.getElementById(id);
+    if (el) map[id] = a;
+  });
+  var ids = Object.keys(map);
+  function onScroll() {
+    var pos = window.scrollY + 120, current = null;
+    ids.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el && el.offsetTop <= pos) current = id;
+    });
+    links.forEach(function (a) { a.classList.remove('active'); });
+    if (current && map[current]) {
+      map[current].classList.add('active');
+    }
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  // --- Mobile menu ---
+  var sidebar = document.getElementById('sidebar');
+  var scrim = document.getElementById('scrim');
+  var menuBtn = document.getElementById('menuBtn');
+  function closeMenu() { sidebar.classList.remove('open'); scrim.classList.remove('show'); }
+  menuBtn.addEventListener('click', function () {
+    sidebar.classList.toggle('open'); scrim.classList.toggle('show');
+  });
+  scrim.addEventListener('click', closeMenu);
+  sidebar.addEventListener('click', function (e) {
+    if (e.target.closest('a')) closeMenu();
+  });
+
+  // --- Theme toggle ---
+  var themeBtn = document.getElementById('themeBtn');
+  var saved = null;
+  try { saved = localStorage.getItem('runbook-theme'); } catch (e) {}
+  if (saved) document.documentElement.setAttribute('data-theme', saved);
+  themeBtn.addEventListener('click', function () {
+    var cur = document.documentElement.getAttribute('data-theme');
+    var isDark = cur === 'dark' ||
+      (!cur && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    var next = isDark ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try { localStorage.setItem('runbook-theme', next); } catch (e) {}
+  });
+})();
+</script>
+</body>
+</html>
