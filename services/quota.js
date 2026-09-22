@@ -55,6 +55,26 @@ async function quotaFor(device) {
   const used = await usedBytesThisPeriod(device.id);
   const resetsAt = nextPeriodStart().toISOString();
 
+  // Dev-only per-device override: a fixed monthly cap wins over the plan (even
+  // over an unlimited premium plan), so a developer can force near-cap /
+  // exhausted states on demand. NULL ⇒ no override, fall through to the plan.
+  const override =
+    device && device.quota_override_bytes != null
+      ? Number(device.quota_override_bytes)
+      : null;
+  if (override != null && Number.isFinite(override)) {
+    const limit = Math.max(0, override);
+    return {
+      isPremium: premium,
+      unlimited: false,
+      limitBytes: limit,
+      usedBytes: used,
+      remainingBytes: Math.max(0, limit - used),
+      period: plan.period,
+      resetsAt,
+    };
+  }
+
   if (plan.unlimited) {
     return {
       // `isPremium` tells the client the tier regardless of the cap — premium is

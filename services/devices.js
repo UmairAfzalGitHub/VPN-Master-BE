@@ -106,6 +106,23 @@ async function setPremium(id, enabled) {
   return rows[0] || null;
 }
 
+/**
+ * Set (or clear) a device's dev-only data-allowance override. `bytes` is a
+ * non-negative monthly cap in bytes, or null to clear the override and fall
+ * back to the plan. Returns the updated device row, or null if the id is
+ * unknown.
+ * @param {string} id
+ * @param {number|null} bytes
+ */
+async function setQuotaOverride(id, bytes) {
+  const value = bytes == null ? null : Math.max(0, Math.round(Number(bytes)));
+  const { rows } = await query(
+    'UPDATE devices SET quota_override_bytes = $2 WHERE id = $1 RETURNING *',
+    [id, value],
+  );
+  return rows[0] || null;
+}
+
 /** 32 random bytes, base64 — a valid WireGuard preshared key. */
 function generatePresharedKey() {
   return crypto.randomBytes(32).toString('base64');
@@ -119,6 +136,7 @@ module.exports = {
   registerDevice,
   touch,
   setPremium,
+  setQuotaOverride,
   resolveForSession,
   generatePresharedKey,
 };

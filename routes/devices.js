@@ -1,7 +1,13 @@
 'use strict';
 
 const express = require('express');
-const { registerDevice, signDeviceToken, setPremium, getById } = require('../services/devices');
+const {
+  registerDevice,
+  signDeviceToken,
+  setPremium,
+  setQuotaOverride,
+  getById,
+} = require('../services/devices');
 const { quotaFor } = require('../services/quota');
 const { asyncHandler } = require('../middleware/asyncHandler');
 
@@ -75,6 +81,53 @@ router.post(
     const device = (await setPremium(req.device.id, enabled)) || current;
     const quota = await quotaFor(device);
     return res.json({ isPremium: device.is_premium, quota });
+  }),
+);
+
+/**
+ * POST /v1/devices/quota — dev-only override of this device's monthly data
+ * allowance, so a developer can force a specific cap (e.g. 100 MB) and exercise
+ * the near-cap / exhausted quota UI without burning real data. Same gating as
+ * /premium: a device bearer token AND membership in DEV_UNLIMITED_DEVICE_IDS,
+ * so it's safe to leave enabled in production (404s when the allowlist is empty).
+ * Body: { limitBytes?: number | null }  — a non-negative byte cap, or null to
+ *   clear the override and fall back to the plan.
+ * Returns: { quota }
+ */
+router.post(
+  '/quota',
+  asyncHandler(async (req, res) => {
+    const allowlist = devUnlimitedDeviceIds();
+    // Empty allowlist ⇒ feature off; hide the endpoint entirely.
+    if (allowlist.size === 0) return res.status(404).json({ error: 'Not found' });
+
+    if (!req.device || !req.device.id) {
+      return res.status(401).json({ error: 'Device token required' });
+    }
+
+    const current = await getById(req.device.id);
+    if (!current) return res.status(404).json({ error: 'Unknown device' });
+
+    // Only allowlisted devices (by their client device_id) may flip this.
+    if (!current.device_id || !allowlist.has(current.device_id)) {
+      return res.status(403).json({ error: 'Not permitted for this device' });
+    }
+
+    const raw = req.body ? req.body.limitBytes : undefined;
+    let limitBytes;
+    if (raw === null) {
+      limitBytes = null; // explicit null clears the override
+    } else if (typeof raw === 'number' && Number.isFinite(raw) && raw >= 0) {
+      limitBytes = Math.round(raw);
+    } else {
+      return res
+        .status(400)
+        .json({ error: 'limitBytes must be a non-negative number or null' });
+    }
+
+    const device = (await setQuotaOverride(req.device.id, limitBytes)) || current;
+    const quota = await quotaFor(device);
+    return res.json({ quota });
   }),
 );
 
