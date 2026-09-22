@@ -23,13 +23,13 @@ function freePlan() {
 
 /**
  * Premium tier. Set PREMIUM_UNLIMITED=true for unlimited, otherwise a byte
- * limit (default 100 GB / month).
+ * limit (default 10 GB / month).
  */
 function premiumPlan() {
   const unlimited = String(process.env.PREMIUM_UNLIMITED).toLowerCase() === 'true';
   const plan = { period: process.env.PREMIUM_PERIOD || 'monthly' };
   if (unlimited) plan.unlimited = true;
-  else plan.limitBytes = num(process.env.PREMIUM_LIMIT_BYTES, 100 * GB);
+  else plan.limitBytes = num(process.env.PREMIUM_LIMIT_BYTES, 10 * GB);
   return plan;
 }
 

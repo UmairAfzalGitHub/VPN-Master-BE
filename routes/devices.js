@@ -78,4 +78,33 @@ router.post(
   }),
 );
 
+/**
+ * POST /v1/devices/subscription — grant (or clear) this device's premium
+ * entitlement after an App Store purchase/restore. Per product decision we do
+ * NOT validate the receipt server-side (the client already verifies it with
+ * Apple); the device self-declares its subscription state over its own bearer
+ * token, so a device can only change ITS OWN entitlement.
+ *
+ * Body: { active?: boolean }  (defaults to true)
+ * Returns: { isPremium, quota }
+ */
+router.post(
+  '/subscription',
+  asyncHandler(async (req, res) => {
+    if (!req.device || !req.device.id) {
+      return res.status(401).json({ error: 'Device token required' });
+    }
+
+    const active =
+      req.body && typeof req.body.active === 'boolean' ? req.body.active : true;
+
+    const current = await getById(req.device.id);
+    if (!current) return res.status(404).json({ error: 'Unknown device' });
+
+    const device = (await setPremium(req.device.id, active)) || current;
+    const quota = await quotaFor(device);
+    return res.json({ isPremium: device.is_premium, quota });
+  }),
+);
+
 module.exports = router;

@@ -57,6 +57,9 @@ async function quotaFor(device) {
 
   if (plan.unlimited) {
     return {
+      // `isPremium` tells the client the tier regardless of the cap — premium is
+      // now a metered plan (10 GB), so `unlimited` alone no longer means premium.
+      isPremium: premium,
       unlimited: true,
       usedBytes: used,
       period: plan.period,
@@ -67,6 +70,7 @@ async function quotaFor(device) {
   const limit = plan.limitBytes;
   const remaining = Math.max(0, limit - used);
   return {
+    isPremium: premium,
     unlimited: false,
     limitBytes: limit,
     usedBytes: used,
