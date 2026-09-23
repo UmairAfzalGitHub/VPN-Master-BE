@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('crypto');
 const express = require('express');
 const { pool, query } = require('../db/pool');
 const { asyncHandler } = require('../middleware/asyncHandler');
@@ -11,6 +12,14 @@ const provisioner = require('../services/provisioner');
 const router = express.Router();
 
 const USE_PSK = String(process.env.ENABLE_PSK).toLowerCase() !== 'false'; // on by default
+
+// How long a connect grant is valid before it must be redeemed at /authorize.
+const GRANT_TTL_SECONDS = Number(process.env.CONNECT_GRANT_TTL_SECONDS || 120);
+
+/** A single-use connect-grant token. */
+function newGrant() {
+  return crypto.randomBytes(32).toString('base64url');
+}
 
 async function getServer(id) {
   const { rows } = await query('SELECT * FROM servers WHERE id = $1 AND enabled = true', [id]);
@@ -72,8 +81,34 @@ router.post(
       freshlyAllocated = true;
     }
 
-    // Program the node (mock or real agent). Arm enforcement with REMAINING
-    // bytes, not the full plan. If the node can't be programmed, don't leave a
+    const baseResponse = {
+      serverPublicKey: server.public_key,
+      endpoint: server.endpoint,
+      assignedAddresses: [`${peer.assigned_ip}/32`],
+      dns: server.dns,
+      presharedKey: peer.preshared_key || null,
+      quota,
+    };
+
+    // Gated clients (new app versions send `gated: true`) don't get the peer
+    // programmed onto the node here — they must redeem a single-use grant at
+    // /sessions/authorize first, which is what prevents connecting from iOS
+    // Settings without opening the app. Legacy clients omit the flag and keep
+    // the original behavior (arm immediately), so live apps are unaffected.
+    if (req.body.gated === true) {
+      const grant = newGrant();
+      await query(
+        `UPDATE peers
+            SET armed = false, grant_token = $1, grant_consumed = false,
+                grant_expires_at = now() + ($2 || ' seconds')::interval, updated_at = now()
+          WHERE id = $3`,
+        [grant, String(GRANT_TTL_SECONDS), peer.id],
+      );
+      return res.json({ ...baseResponse, connectGrant: grant, grantTTL: GRANT_TTL_SECONDS });
+    }
+
+    // Legacy path — unchanged. Program the node now, arming enforcement with
+    // REMAINING bytes. If the node can't be programmed, don't leave a
     // half-registered peer / leaked tunnel IP behind — roll back a fresh
     // allocation and surface a clear error.
     try {
@@ -97,14 +132,75 @@ router.post(
       return res.status(502).json({ error: 'Could not reach the VPN node. Try again or pick another server.' });
     }
 
-    return res.json({
-      serverPublicKey: server.public_key,
-      endpoint: server.endpoint,
-      assignedAddresses: [`${peer.assigned_ip}/32`],
-      dns: server.dns,
-      presharedKey: peer.preshared_key || null,
-      quota,
-    });
+    return res.json(baseResponse);
+  }),
+);
+
+/**
+ * POST /v1/sessions/authorize — redeem a connect grant and program the peer
+ * onto the node ("arm" it). Called by the app's tunnel just before it brings
+ * the link up (on iOS, by the packet-tunnel extension). A connection started
+ * from Settings has no grant and so can never reach this — the peer stays
+ * un-armed and the WireGuard handshake finds no peer. Body:
+ * { serverID, publicKey, grant }.
+ */
+router.post(
+  '/authorize',
+  asyncHandler(async (req, res) => {
+    const { serverID, publicKey, grant } = req.body || {};
+    if (!serverID || !publicKey || !grant) {
+      return res.status(400).json({ error: 'serverID, publicKey and grant are required' });
+    }
+
+    const server = await getServer(serverID);
+    if (!server) return res.status(404).json({ error: `Unknown server: ${serverID}` });
+
+    const { rows } = await query(
+      'SELECT * FROM peers WHERE server_id = $1 AND public_key = $2',
+      [serverID, publicKey],
+    );
+    const peer = rows[0];
+    if (!peer) return res.status(404).json({ error: 'No pending session for this device.' });
+
+    // Idempotent: a retry after the peer is already armed just succeeds.
+    if (peer.armed && peer.grant_consumed) {
+      return res.json({ ok: true });
+    }
+
+    const valid =
+      peer.grant_token &&
+      grant === peer.grant_token &&
+      !peer.grant_consumed &&
+      peer.grant_expires_at &&
+      new Date(peer.grant_expires_at).getTime() > Date.now();
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid or expired connect grant.' });
+    }
+
+    // Arm the node with the device's REMAINING allowance, mirroring the legacy
+    // /sessions path.
+    const device = await resolveForSession(req, publicKey);
+    const quota = await quotaFor(device);
+    try {
+      await provisioner.addPeer({
+        server,
+        publicKey,
+        assignedIp: peer.assigned_ip,
+        presharedKey: peer.preshared_key,
+        remainingBytes: remainingFromQuota(quota),
+      });
+    } catch (err) {
+      console.error(
+        `[sessions] authorize provisioner.addPeer failed for ${serverID} (agent_url=${server.agent_url}): ${err.message}`,
+      );
+      return res.status(502).json({ error: 'Could not reach the VPN node. Try again.' });
+    }
+
+    await query(
+      'UPDATE peers SET armed = true, grant_consumed = true, updated_at = now() WHERE id = $1',
+      [peer.id],
+    );
+    return res.json({ ok: true });
   }),
 );
 

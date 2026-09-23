@@ -37,7 +37,23 @@ async function reapStalePeers() {
     reaped += 1;
   }
   if (reaped) console.log(`[reaper] removed ${reaped} stale peer(s)`);
+
+  reaped += await reapUnauthorizedPeers();
   return reaped;
+}
+
+/**
+ * Remove gated reservations that were never authorized: a peer sits un-armed
+ * with an expired grant. It was never programmed onto the node, so there's
+ * nothing to remove there — we just free the reserved tunnel IP. Legacy peers
+ * are always armed and so are never matched here.
+ */
+async function reapUnauthorizedPeers() {
+  const { rowCount } = await query(
+    `DELETE FROM peers WHERE NOT armed AND grant_expires_at IS NOT NULL AND grant_expires_at < now()`,
+  );
+  if (rowCount) console.log(`[reaper] removed ${rowCount} un-authorized reservation(s)`);
+  return rowCount;
 }
 
 /** Start the periodic reaper. Returns the interval handle. */
