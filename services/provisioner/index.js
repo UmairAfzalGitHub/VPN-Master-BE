@@ -19,6 +19,8 @@
 
 const mock = require('./mock');
 const agent = require('./agent');
+const ikev2Mock = require('./ikev2Mock');
+const ikev2Agent = require('./ikev2Agent');
 
 function adapterFor(server) {
   switch (server.provisioner) {
@@ -27,6 +29,22 @@ function adapterFor(server) {
     case 'mock':
     default:
       return mock;
+  }
+}
+
+/**
+ * IKEv2 adapter for a server. Selected by `servers.provisioner`:
+ *   - 'ikev2' -> the strongSwan/RADIUS node agent (ikev2Agent)
+ *   - 'mock'  -> ikev2Mock (no node; dev / staging / CI)
+ * Exposes addCredential / removeCredential / fetchAccounting.
+ */
+function ikev2AdapterFor(server) {
+  switch (server.provisioner) {
+    case 'ikev2':
+      return ikev2Agent;
+    case 'mock':
+    default:
+      return ikev2Mock;
   }
 }
 
@@ -49,4 +67,38 @@ function removePeer(args) {
   return adapterFor(args.server).removePeer(args);
 }
 
-module.exports = { addPeer, removePeer, adapterFor };
+// --- IKEv2 (strongSwan/RADIUS) --------------------------------------------
+// Parallel surface to addPeer/removePeer for protocol='ikev2' servers.
+
+/**
+ * Provision an EAP credential on an IKEv2 node's RADIUS.
+ * @param {object} args
+ * @param {object} args.server        server row (provisioner 'ikev2' | 'mock')
+ * @param {string} args.username      EAP username
+ * @param {string} args.password      EAP password (plaintext; node-side only)
+ * @param {number|null} args.remainingBytes  device's remaining monthly allowance
+ * @param {Date|string|null} args.expiresAt  credential validity (connect-gate)
+ */
+function addCredential(args) {
+  return ikev2AdapterFor(args.server).addCredential(args);
+}
+
+/** Remove an EAP credential and CoA-disconnect its live session. */
+function removeCredential(args) {
+  return ikev2AdapterFor(args.server).removeCredential(args);
+}
+
+/** Pull a node's RADIUS accounting snapshot (usage poller). */
+function fetchAccounting(args) {
+  return ikev2AdapterFor(args.server).fetchAccounting(args);
+}
+
+module.exports = {
+  addPeer,
+  removePeer,
+  adapterFor,
+  addCredential,
+  removeCredential,
+  fetchAccounting,
+  ikev2AdapterFor,
+};

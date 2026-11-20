@@ -1,8 +1,11 @@
 'use strict';
 
 const { pool, query } = require('../db/pool');
-const { addUsage } = require('./quota');
+const { addUsage, quotaFor, isExhausted } = require('./quota');
 const { requestJson } = require('./provisioner/nodeHttp');
+const provisioner = require('./provisioner');
+const { getById } = require('./devices');
+const ikev2 = require('./ikev2');
 
 /**
  * Usage poller. Our node agents expose a PULL endpoint (`GET /metrics`) rather
@@ -77,16 +80,105 @@ async function ingestServer(server) {
   return processed;
 }
 
-/** One poll pass over all enabled agent-backed nodes. */
+/**
+ * Ingest one IKEv2 node's RADIUS accounting into the ledger. Mirrors
+ * ingestServer but keyed on `ikev2_sessions.eap_username` instead of a peer
+ * public key, and sourced from the node agent's /accounting endpoint.
+ */
+async function ingestIkev2Server(server) {
+  const sessions = await provisioner.fetchAccounting({ server });
+  let processed = 0;
+  const touchedDeviceIds = new Set();
+
+  for (const s of sessions) {
+    if (!s || !s.username) continue;
+    const rx = Number(s.rxBytes) || 0;
+    const tx = Number(s.txBytes) || 0;
+    const lastSeen = Number(s.lastSeen) || 0; // unix seconds, 0 = unknown
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const { rows } = await client.query(
+        'SELECT * FROM ikev2_sessions WHERE server_id = $1 AND eap_username = $2 FOR UPDATE',
+        [server.id, s.username],
+      );
+      if (!rows.length) {
+        await client.query('ROLLBACK');
+        continue; // accounting for a session we didn't mint — ignore
+      }
+      const sess = rows[0];
+      const prevRx = Number(sess.last_sample_rx);
+      const prevTx = Number(sess.last_sample_tx);
+      const dRx = rx >= prevRx ? rx - prevRx : rx;
+      const dTx = tx >= prevTx ? tx - prevTx : tx;
+
+      await addUsage(sess.device_id, dRx + dTx, client);
+      await client.query(
+        `UPDATE ikev2_sessions SET last_sample_rx = $1, last_sample_tx = $2,
+           assigned_ip = COALESCE($3, assigned_ip),
+           last_handshake_at = CASE WHEN $4 > 0 THEN to_timestamp($4) ELSE last_handshake_at END,
+           updated_at = now()
+         WHERE id = $5`,
+        [rx, tx, s.assignedIp || null, lastSeen, sess.id],
+      );
+      await client.query('COMMIT');
+      touchedDeviceIds.add(sess.device_id);
+      processed += 1;
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => {});
+      console.error(`[usage] ${server.id} ikev2 ${String(s.username)}: ${err.message}`);
+    } finally {
+      client.release();
+    }
+  }
+
+  // Quota ENFORCEMENT for IKEv2 (plan option 1). WireGuard drops over-quota
+  // peers in-kernel; IKEv2 has no such cutoff, so once the ledger shows a
+  // device exhausted we revoke its credential here (which CoA-disconnects the
+  // live SA). Enforcement latency = one poll interval.
+  for (const deviceId of touchedDeviceIds) {
+    try {
+      const device = await getById(deviceId);
+      if (!device) continue;
+      if (!isExhausted(await quotaFor(device))) continue;
+      const { rows } = await query(
+        'SELECT eap_username FROM ikev2_sessions WHERE device_id = $1 AND server_id = $2 AND active',
+        [deviceId, server.id],
+      );
+      for (const r of rows) {
+        await ikev2.revokeByUsername({ server, username: r.eap_username });
+        console.log(`[usage] ${server.id} revoked ikev2 ${r.eap_username} — quota exhausted`);
+      }
+    } catch (err) {
+      console.error(`[usage] ${server.id} ikev2 enforce (${deviceId}): ${err.message}`);
+    }
+  }
+
+  return processed;
+}
+
+/** One poll pass over all enabled agent-backed nodes (WireGuard + IKEv2). */
 async function pollOnce() {
-  const { rows: servers } = await query(
+  const { rows: wgServers } = await query(
     "SELECT * FROM servers WHERE enabled = true AND provisioner = 'agent' AND agent_url IS NOT NULL",
   );
-  for (const server of servers) {
+  for (const server of wgServers) {
     try {
       await ingestServer(server);
     } catch (err) {
       console.error(`[usage] poll ${server.id} failed: ${err.message}`);
+    }
+  }
+
+  const { rows: ikev2Servers } = await query(
+    "SELECT * FROM servers WHERE enabled = true AND provisioner = 'ikev2' AND agent_url IS NOT NULL",
+  );
+  for (const server of ikev2Servers) {
+    try {
+      await ingestIkev2Server(server);
+    } catch (err) {
+      console.error(`[usage] poll ${server.id} (ikev2) failed: ${err.message}`);
     }
   }
 }
@@ -105,4 +197,4 @@ function startUsagePoller() {
   return handle;
 }
 
-module.exports = { pollOnce, ingestServer, startUsagePoller };
+module.exports = { pollOnce, ingestServer, ingestIkev2Server, startUsagePoller };

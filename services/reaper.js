@@ -39,6 +39,45 @@ async function reapStalePeers() {
   if (reaped) console.log(`[reaper] removed ${reaped} stale peer(s)`);
 
   reaped += await reapUnauthorizedPeers();
+  reaped += await reapIkev2Sessions();
+  return reaped;
+}
+
+/**
+ * Reap IKEv2 sessions. A session is removed when its credential has expired
+ * (the connect-gate window lapsed) or it's gone stale (no accounting activity
+ * within the TTL). We revoke the credential on the node (best-effort — this
+ * also CoA-disconnects any lingering SA) and drop the row, freeing the identity.
+ */
+async function reapIkev2Sessions() {
+  const { rows } = await query(
+    `SELECT i.id, i.eap_username, s.id AS server_id, s.provisioner, s.agent_url, s.protocol
+       FROM ikev2_sessions i JOIN servers s ON s.id = i.server_id
+      WHERE i.revoked = true
+         OR i.expires_at < now()
+         OR COALESCE(i.last_handshake_at, i.created_at) < now() - ($1 || ' minutes')::interval`,
+    [String(TTL_MINUTES)],
+  );
+
+  let reaped = 0;
+  for (const row of rows) {
+    const server = {
+      id: row.server_id,
+      provisioner: row.provisioner,
+      agent_url: row.agent_url,
+      protocol: row.protocol,
+    };
+    try {
+      await provisioner.removeCredential({ server, username: row.eap_username });
+    } catch (err) {
+      console.error(`[reaper] removeCredential failed (${row.server_id}):`, err.message);
+      // fall through — still drop the row; an expired credential is already
+      // useless, and the node's own expiry/accounting will catch leftovers.
+    }
+    await query('DELETE FROM ikev2_sessions WHERE id = $1', [row.id]);
+    reaped += 1;
+  }
+  if (reaped) console.log(`[reaper] removed ${reaped} IKEv2 session(s)`);
   return reaped;
 }
 
@@ -67,4 +106,4 @@ function startReaper() {
   return handle;
 }
 
-module.exports = { reapStalePeers, startReaper };
+module.exports = { reapStalePeers, reapIkev2Sessions, startReaper };

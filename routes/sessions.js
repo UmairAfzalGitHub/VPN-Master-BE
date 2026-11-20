@@ -8,6 +8,7 @@ const { resolveForSession, generatePresharedKey, touch } = require('../services/
 const { quotaFor, isExhausted } = require('../services/quota');
 const { allocateAddress } = require('../utils/ip');
 const provisioner = require('../services/provisioner');
+const ikev2 = require('../services/ikev2');
 
 const router = express.Router();
 
@@ -39,12 +40,17 @@ router.post(
   '/',
   asyncHandler(async (req, res) => {
     const { serverID, publicKey } = req.body || {};
-    if (!serverID || !publicKey) {
-      return res.status(400).json({ error: 'serverID and publicKey are required' });
+    if (!serverID) {
+      return res.status(400).json({ error: 'serverID is required' });
     }
 
     const server = await getServer(serverID);
     if (!server) return res.status(404).json({ error: `Unknown server: ${serverID}` });
+
+    // WireGuard needs the client public key; IKEv2 has no client key.
+    if (server.protocol !== 'ikev2' && !publicKey) {
+      return res.status(400).json({ error: 'publicKey is required' });
+    }
 
     const device = await resolveForSession(req, publicKey);
     await touch(device.id);
@@ -60,6 +66,28 @@ router.post(
       return res.status(403).json({ error: 'Monthly data limit reached.', quota });
     }
 
+    // IKEv2 servers take a different path entirely: no client public key, no
+    // tunnel-IP allocation here (strongSwan assigns from its pool). We mint a
+    // short-lived EAP credential and hand the client the IKEv2 coordinates.
+    if (server.protocol === 'ikev2') {
+      try {
+        const { eap, expiresAt } = await ikev2.createSession({
+          device,
+          server,
+          remainingBytes: remainingFromQuota(quota),
+        });
+        return res.json(ikev2.toClientPayload({ server, eap, expiresAt, quota }));
+      } catch (err) {
+        console.error(
+          `[sessions] ikev2 createSession failed for ${serverID} (agent_url=${server.agent_url}): ${err.message}`,
+        );
+        return res
+          .status(502)
+          .json({ error: 'Could not reach the VPN node. Try again or pick another server.' });
+      }
+    }
+
+    // --- WireGuard path (unchanged) -----------------------------------------
     // Idempotency: reuse an existing active peer for this (server, pubkey).
     const existing = await query(
       'SELECT * FROM peers WHERE server_id = $1 AND public_key = $2',
@@ -211,11 +239,23 @@ router.post(
 router.post(
   '/close',
   asyncHandler(async (req, res) => {
-    const { serverID, publicKey } = req.body || {};
-    if (!serverID || !publicKey) {
-      return res.status(400).json({ error: 'serverID and publicKey are required' });
+    const { serverID, publicKey, username } = req.body || {};
+    if (!serverID) {
+      return res.status(400).json({ error: 'serverID is required' });
     }
     const server = await getServer(serverID);
+
+    // IKEv2 teardown: revoke the EAP credential (CoA-disconnects the SA) and
+    // drop the session row. Keyed by the username handed out at connect.
+    if (server && server.protocol === 'ikev2') {
+      if (!username) return res.status(400).json({ error: 'username is required' });
+      await ikev2.revokeByUsername({ server, username });
+      return res.status(204).end();
+    }
+
+    if (!publicKey) {
+      return res.status(400).json({ error: 'publicKey is required' });
+    }
     if (server) {
       try {
         await provisioner.removePeer({ server, publicKey });

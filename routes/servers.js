@@ -16,12 +16,17 @@ function toClient(row) {
     city: row.city || null,
     endpoint: row.endpoint,
     publicKey: row.public_key,
+    // Tunnel protocol the client should use for this server: 'wireguard' or
+    // 'ikev2'. Lets a mixed fleet roll out IKEv2 node-by-node.
+    protocol: row.protocol || 'wireguard',
     load: row.load == null ? null : Number(row.load),
     isPremium: row.is_premium,
     // A server is connectable only when it's backed by a real node agent.
     // Placeholder/seed servers (provisioner='mock') report false so the client
-    // can show them as "Coming soon" instead of letting the user connect.
-    available: row.enabled && row.provisioner === 'agent' && !!row.agent_url,
+    // can show them as "Coming soon" instead of letting the user connect. Both
+    // the WireGuard agent ('agent') and the IKEv2 agent ('ikev2') count as real.
+    available:
+      row.enabled && (row.provisioner === 'agent' || row.provisioner === 'ikev2') && !!row.agent_url,
   };
 }
 
