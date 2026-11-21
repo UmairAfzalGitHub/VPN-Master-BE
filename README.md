@@ -84,11 +84,33 @@ agent, then register the node with a migration and push. Each node needs its own
 
 - [x] Render web service (`nyx-edge`) + Postgres (`vpn-master-db`) on paid tiers.
 - [x] Native IKEv2 end to end; WireGuard removed (migration 014).
-- [x] London (`gb-lon-01`) live and verified with a real client.
-- [ ] Convert Frankfurt, Singapore, New York (parked as "coming soon").
+- [x] London (`gb-lon-01`) live and verified with a real client (macOS profile and the iOS app).
+- [x] `render.yaml` reconciled with the live `nyx-edge` service (plan lines still to be confirmed in the dashboard).
+
+**Do these next**
+
+- [ ] **Revert London to a premium server.** It was switched to FREE by hand in the production
+      database so a free device could test it (nothing in git sets this, so a redeploy keeps it).
+      Undo it once a free node exists (New York is the intended free server):
+      ```sql
+      UPDATE servers SET is_premium = true, updated_at = now() WHERE id = 'gb-lon-01';
+      ```
+      Run it with `psql "<External Database URL>"` (Render → `vpn-master-db` → Connect → External).
+- [ ] **Resize the other droplets to 1 GB and add their DNS records**, then convert them with
+      [`docs/RUNBOOK-add-server.md`](docs/RUNBOOK-add-server.md) (parked as "coming soon" until then):
+      Frankfurt `fra` → `164.90.168.100`, Singapore `sin` → `168.144.38.9`, New York `nyc` →
+      `192.34.58.185`, each `<name>.outposttechnologies.co` in Cloudflare as an `A` record, **DNS
+      only (grey cloud)**. The $6 / 1 GB plan was unavailable in Frankfurt (try Premium Intel ~$8, or
+      another region). Until New York is converted there is **no free-tier server** — only London.
+
+**Later**
+
 - [ ] Set real `TERMS_URL` / `PRIVACY_URL`; rotate `API_KEYS` / `JWT_SECRET` off any shared values.
-- [ ] `render.yaml` is out of date vs. the real service (`nyx-edge`, Postgres 18) — reconcile.
-- [ ] Rate-limit `/sessions`; separate the connect-gate TTL from session lifetime; IAP receipt validation.
+- [ ] Rate-limit `/sessions`; separate the connect-gate TTL from session lifetime; IAP receipt validation
+      (`/devices/subscription` currently trusts the device — anyone with the app key can self-grant premium).
+- [ ] Pin IKEv2 algorithms on both apps and the nodes (a phone negotiated AES-256-CBC / DH group 14), and
+      prune node `radacct` + shorten backend session retention so the "no logs" wording is accurate.
+- [ ] Set `AppStoreLink.appID` in the iOS app once there is a store listing (the forced-update button).
 
 ## Layout
 
