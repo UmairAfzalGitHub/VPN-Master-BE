@@ -1,10 +1,21 @@
-# Render blueprint. Connect the `main` branch for production.
+# Render blueprint — describes the LIVE production service (`nyx-edge`, Oregon).
 # Docs: https://render.com/docs/blueprint-spec
+#
+# History: this file used to describe a service named `VPN-Master-BE`; production
+# runs as `nyx-edge` (a neutral hostname on purpose — no "vpn" in the name), and the
+# old `vpn-master-be` service is suspended. The name, region and Postgres version
+# below were reconciled with the dashboard.
+#
+# CHECK IN THE DASHBOARD before ever applying this blueprint: the `plan` lines were
+# not re-verified against the live service, and the env values below are the
+# INTENDED ones (they match the code defaults and docs/BACKEND.md). A blueprint
+# sync can resize a service or change its env.
 services:
   - type: web
-    name: VPN-Master-BE
+    name: nyx-edge
     runtime: node
-    plan: starter
+    region: oregon
+    plan: starter            # TODO: confirm against the live service's instance type
     branch: main
     buildCommand: npm ci
     startCommand: npm start
@@ -21,23 +32,41 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: API_KEYS
-        generateValue: true   # the app's X-API-Key (copy into APIConfiguration)
+        generateValue: true   # the apps' X-API-Key
       - key: NODE_AGENT_SECRET
-        generateValue: true   # shared with each node agent
+        generateValue: true   # shared with EVERY node agent (their AGENT_SECRET)
       - key: CORS_ORIGIN
         value: "*"
+      # --- plans / quotas (served via GET /v1/config) ---
       - key: FREE_LIMIT_BYTES
-        value: "1073741824"
+        value: "1073741824"       # 1 GB / month
       - key: PREMIUM_LIMIT_BYTES
-        value: "107374182400"
+        value: "10737418240"      # 10 GB / month (was 100 GB here; code + product say 10 GB)
+      # --- session lifecycle ---
+      - key: IKEV2_CRED_TTL_SECONDS
+        value: "86400"            # how long a minted EAP credential is accepted (24 h)
       - key: PEER_TTL_MINUTES
-        value: "30"
+        value: "30"               # reap a session with no accounting for this long
+      # --- boot: survive a brief database restart before giving up ---
+      - key: DB_CONNECT_RETRIES
+        value: "20"
+      - key: DB_CONNECT_DELAY_MS
+        value: "3000"
+      # --- forced update (apps read these from GET /v1/config) ---
+      - key: MIN_SUPPORTED_VERSION
+        value: "1.0.0"
+      - key: FORCE_UPDATE
+        value: "false"            # set "true" to block builds below MIN_SUPPORTED_VERSION
+      # --- set by hand in the dashboard (not stored in git) ---
       - key: TERMS_URL
         sync: false
       - key: PRIVACY_URL
         sync: false
+      - key: DEV_UNLIMITED_DEVICE_IDS
+        sync: false               # comma-separated dev device ids; empty = dev endpoints 404
 
 databases:
   - name: vpn-master-db
-    plan: basic-256mb
-    postgresMajorVersion: "16"
+    region: oregon
+    plan: basic-256mb            # TODO: confirm against the live database's plan
+    postgresMajorVersion: "18"
