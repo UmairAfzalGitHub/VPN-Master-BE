@@ -6,6 +6,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 
+const { query } = require('./db/pool');
 const { runMigrations } = require('./db/migrate');
 const { requireApiKey, configuredKeys } = require('./middleware/apiKey');
 const { optionalDeviceAuth } = require('./middleware/deviceAuth');
@@ -55,6 +56,32 @@ app.use((err, _req, res, _next) => {
 });
 
 // ----- Boot -----------------------------------------------------------------
+
+/**
+ * Wait for Postgres to accept connections before migrating. A managed database
+ * can be briefly unreachable (restart, maintenance, major-version upgrade) while
+ * the service boots; exiting on the first ECONNREFUSED turned that into a failed
+ * deploy. Retry for ~60s by default, then give up so a genuinely broken database
+ * still fails loudly.
+ */
+async function waitForDatabase() {
+  const attempts = Math.max(1, Number(process.env.DB_CONNECT_RETRIES || 20));
+  const delayMs = Math.max(0, Number(process.env.DB_CONNECT_DELAY_MS || 3000));
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await query('SELECT 1');
+      if (attempt > 1) console.log(`[boot] database reachable after ${attempt} attempts`);
+      return;
+    } catch (err) {
+      if (attempt >= attempts) throw err;
+      console.warn(
+        `[boot] database not ready (${err.code || err.message}) — retry ${attempt}/${attempts - 1} in ${Math.round(delayMs / 1000)}s`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
 async function start() {
   try {
     // Fail closed in production if no app keys are configured.
@@ -62,6 +89,7 @@ async function start() {
       throw new Error('API_KEYS is required in production (X-API-Key gate). See .env.example.');
     }
 
+    await waitForDatabase();
     await runMigrations();
     startReaper();
     startUsagePoller();
