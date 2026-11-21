@@ -108,8 +108,11 @@ agent, then register the node with a migration and push. Each node needs its own
 - [ ] Set real `TERMS_URL` / `PRIVACY_URL`; rotate `API_KEYS` / `JWT_SECRET` off any shared values.
 - [ ] Rate-limit `/sessions`; separate the connect-gate TTL from session lifetime; IAP receipt validation
       (`/devices/subscription` currently trusts the device — anyone with the app key can self-grant premium).
-- [ ] Pin IKEv2 algorithms on both apps and the nodes (a phone negotiated AES-256-CBC / DH group 14), and
-      prune node `radacct` + shorten backend session retention so the "no logs" wording is accurate.
+- [x] IKEv2 crypto pinned: nodes accept only AES-256 suites; the iOS app pins AES-256-GCM + Curve25519;
+      Android restricts its profile to AES-GCM / AES-CBC + SHA-2. London is done — **apply the same
+      `proposals` / `esp_proposals` (runbook §A5) to each node you convert**; confirm what a client got
+      with `swanctl --list-sas`. (Android is not yet verified on a real device.)
+- [ ] Prune node `radacct` + shorten backend session retention so the "no logs" wording in the apps is accurate.
 - [ ] Set `AppStoreLink.appID` in the iOS app once there is a store listing (the forced-update button).
 
 ## Layout

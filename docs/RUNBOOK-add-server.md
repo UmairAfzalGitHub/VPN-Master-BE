@@ -255,6 +255,16 @@ chmod 600 /etc/strongswan.d/zz-vpn.conf
 > The disconnect listener lives **in strongSwan** (`dae { … }` above), *not* in
 > FreeRADIUS. (An earlier draft of the agent README said otherwise — it was wrong.)
 
+> **Pinned cryptography — keep these in step with the apps.** Every suite in `proposals` /
+> `esp_proposals` below is **AES-256** (GCM, or CBC with SHA-256): no 128-bit AES, no SHA-1, no
+> MODP-1024, so the app's "Encryption: AES-256" is true for *any* client. Preference order is
+> AES-256-GCM with Curve25519 → P-384 → P-256 → MODP-2048, then AES-256-CBC + SHA-256 as a fallback
+> for clients that won't do GCM. The iOS app pins **AES-256-GCM + SHA-384 PRF + Curve25519 (DH 31)**
+> in `TunnelManager.install`; Android restricts the profile to `STRONG_ALGORITHMS` (AES-GCM, or
+> AES-CBC + SHA-2). Change a list here and you must change the apps (and vice versa), or clients
+> stop negotiating. Check what a client actually got with `swanctl --list-sas`
+> (e.g. `AES_GCM_16-256/PRF_HMAC_SHA2_384/CURVE_25519` and `ESP:AES_GCM_16-256`).
+
 **The connection:**
 
 ```bash
@@ -270,7 +280,7 @@ connections {
     mobike = yes
     dpd_delay = 30s
     reauth_time = 0s               # never re-run EAP mid-session (see the expiry note in §A8)
-    proposals = aes256gcm16-prfsha384-ecp384,aes256gcm16-prfsha256-ecp256,aes256-sha256-ecp256,aes256-sha256-modp2048,aes128-sha256-modp2048
+    proposals = aes256gcm16-prfsha384-curve25519,aes256gcm16-prfsha256-curve25519,aes256gcm16-prfsha384-ecp384,aes256gcm16-prfsha256-ecp256,aes256gcm16-prfsha256-modp2048,aes256-sha256-curve25519,aes256-sha256-ecp256,aes256-sha256-modp2048
     local {
       auth = pubkey
       certs = server.pem
@@ -283,7 +293,7 @@ connections {
     children {
       net {
         local_ts = 0.0.0.0/0
-        esp_proposals = aes256gcm16,aes128gcm16,aes256-sha256,aes128-sha256
+        esp_proposals = aes256gcm16,aes256-sha256
         dpd_action = clear
       }
     }

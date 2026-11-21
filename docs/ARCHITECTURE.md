@@ -262,6 +262,11 @@ erDiagram
   DPI reset TLS to "vpn"-looking hostnames.
 - Phones validate the node's **publicly trusted** certificate, so each node needs a DNS
   hostname and a Let's Encrypt cert (auto-renewed on the node).
+- **Pinned tunnel cryptography.** The nodes accept only AES-256 suites (AES-256-GCM, or AES-256-CBC
+  + SHA-256; Curve25519 / P-384 / P-256 / MODP-2048 key exchange) — no 128-bit AES, no SHA-1 — so the
+  app's "AES-256" label holds for any client. The iOS app pins AES-256-GCM + Curve25519; Android
+  restricts its profile to AES-GCM / AES-CBC + SHA-2. Node and apps must be changed together (see the
+  runbook, §A5).
 - The agent link is HTTPS with a **pinned self-signed cert** (`certs/<id>-agent.crt`, SAN = node IP).
 - `:8443` is firewalled to **Render's outbound IP ranges**; if those change the firewall
   drops the control plane silently.
