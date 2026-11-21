@@ -91,16 +91,34 @@ async function radQuery(text, params) {
 /**
  * Upsert the EAP user's cleartext password in `radcheck`. FreeRADIUS derives the
  * NT-hash MSCHAPv2 needs from Cleartext-Password, so this one attribute is all
- * that's required. Unique per (username, attribute).
+ * that's required.
+ *
+ * The stock FreeRADIUS schema only has a NON-unique index on (username,
+ * attribute), so `ON CONFLICT (username, attribute)` fails ("no unique or
+ * exclusion constraint matching the ON CONFLICT specification"). Replace the row
+ * in one transaction instead — no schema change needed on the node.
  */
 async function radUpsertUser(username, password) {
-  await radQuery(
-    `INSERT INTO radcheck (username, attribute, op, value)
-     VALUES ($1, 'Cleartext-Password', ':=', $2)
-     ON CONFLICT (username, attribute)
-       DO UPDATE SET value = EXCLUDED.value, op = EXCLUDED.op`,
-    [username, password],
-  );
+  if (!radius) throw new Error('RADIUS_DATABASE_URL not configured');
+  const client = await radius.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `DELETE FROM radcheck WHERE username = $1 AND attribute = 'Cleartext-Password'`,
+      [username],
+    );
+    await client.query(
+      `INSERT INTO radcheck (username, attribute, op, value)
+       VALUES ($1, 'Cleartext-Password', ':=', $2)`,
+      [username, password],
+    );
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 async function radDeleteUser(username) {
@@ -119,7 +137,7 @@ async function radAccounting() {
             COALESCE(SUM(acctinputoctets), 0)  AS rx,
             COALESCE(SUM(acctoutputoctets), 0) AS tx,
             MAX(COALESCE(acctupdatetime, acctstarttime)) AS last_seen,
-            (ARRAY_AGG(framedipaddress ORDER BY acctstarttime DESC)
+            (ARRAY_AGG(host(framedipaddress) ORDER BY acctstarttime DESC)
                FILTER (WHERE framedipaddress IS NOT NULL))[1] AS assigned_ip
        FROM radacct
       GROUP BY username`,
@@ -163,8 +181,11 @@ function daeDisconnect(username) {
       timeout: 5000,
     });
   } catch (err) {
-    // A "no session matched" reply also lands here — harmless.
-    console.error(`[ikev2-agent] DAE disconnect ${username}: ${err.message}`);
+    // A "no session matched" reply also lands here — harmless. execFileSync's
+    // message embeds the full command line, which contains DAE_SECRET (radclient
+    // takes it as an argv), so redact it and keep just the first line.
+    const msg = String(err.message || err).split(DAE_SECRET).join('***').split('\n')[0];
+    console.error(`[ikev2-agent] DAE disconnect ${username}: ${msg}`);
   }
 }
 
