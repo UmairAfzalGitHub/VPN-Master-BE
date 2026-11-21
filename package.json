@@ -1,7 +1,7 @@
 {
   "name": "vpn-master-backend",
   "version": "1.0.0",
-  "description": "Control-plane API for VPN Master (WireGuard). Server catalog, per-device session/peer negotiation, tunnel-IP allocation, and monthly RX+TX quota ledger for the VPNMasteriOS client.",
+  "description": "Control-plane API for VPN Master (IKEv2/IPsec). Server catalog, per-connect EAP credentials, and the monthly RX+TX quota ledger for the iOS and Android clients.",
   "main": "server.js",
   "type": "commonjs",
   "engines": {

@@ -1,21 +1,21 @@
 'use strict';
 
 /**
- * Agent provisioner: talks to a small HTTP agent running ON the WireGuard node
- * (servers.agent_url). The agent is the only thing that touches `wg` and
- * `nftables`; the control plane never needs SSH or root on the node.
+ * Node agent provisioner: talks to the strongSwan/RADIUS node agent running ON
+ * a node (servers.agent_url, servers.provisioner = 'ikev2'). The control plane
+ * never SSHes or touches strongSwan/FreeRADIUS directly.
  *
- * This adapter defines the contract the node agent must implement. The agent
- * itself is deployed separately on each Linux node (it needs a real kernel +
- * WireGuard) — see BACKEND.md section 3 and README "Deploying a real node".
+ * Contract the node agent must implement (see node-agent/README.md):
+ *   POST   {agent_url}/credentials  -> add/refresh an EAP user, arm its quota
+ *     body: { username, password, remainingBytes, expiresAt }
+ *   DELETE {agent_url}/credentials  -> remove the EAP user + CoA-disconnect it
+ *     body: { username }
+ *   GET    {agent_url}/accounting   -> RADIUS accounting snapshot
+ *     -> { sessions: [{ username, rxBytes, txBytes, lastSeen, assignedIp }] }
  *
- *   POST   {agent_url}/peers  -> add/refresh a peer, arm nftables quota
- *     body: { publicKey, assignedIp, presharedKey, remainingBytes }
- *   DELETE {agent_url}/peers  -> remove a peer, drop enforcement + free IP
- *     body: { publicKey }
- *
- * Auth: header `X-Agent-Secret: <NODE_AGENT_SECRET>` (shared with the agent;
- * verified against the running node agent's contract).
+ * Auth: header `X-Agent-Secret: <NODE_AGENT_SECRET>` (shared with every node
+ * agent). The node's self-signed TLS cert is trusted via certs/*.crt
+ * (see ./nodeHttp.js).
  */
 
 const { requestJson } = require('./nodeHttp');
@@ -25,7 +25,7 @@ const TIMEOUT_MS = Number(process.env.NODE_AGENT_TIMEOUT_MS || 8000);
 
 async function call(server, method, path, body) {
   if (!server.agent_url) {
-    throw new Error(`server ${server.id} has provisioner='agent' but no agent_url`);
+    throw new Error(`server ${server.id} has provisioner='ikev2' but no agent_url`);
   }
   const url = `${server.agent_url.replace(/\/$/, '')}${path}`;
   const res = await requestJson(url, {
@@ -34,27 +34,33 @@ async function call(server, method, path, body) {
       'Content-Type': 'application/json',
       'X-Agent-Secret': NODE_AGENT_SECRET,
     },
-    body: JSON.stringify(body),
+    body: body == null ? null : JSON.stringify(body),
     timeoutMs: TIMEOUT_MS,
   });
   if (!res.ok) {
-    throw new Error(`node agent ${server.id} ${method} ${path} -> ${res.status} ${res.text || ''}`);
+    throw new Error(`ikev2 agent ${server.id} ${method} ${path} -> ${res.status} ${res.text || ''}`);
   }
   return res.data ?? { ok: true };
 }
 
-async function addPeer({ server, publicKey, assignedIp, presharedKey, remainingBytes }) {
-  return call(server, 'POST', '/peers', {
-    publicKey,
-    assignedIp,
-    presharedKey: presharedKey || null,
-    // null => unlimited (premium); the agent skips the quota object in that case.
+async function addCredential({ server, username, password, remainingBytes, expiresAt }) {
+  return call(server, 'POST', '/credentials', {
+    username,
+    password,
+    // null => unlimited (premium); the agent arms no byte quota in that case.
     remainingBytes: remainingBytes == null ? null : Math.round(remainingBytes),
+    expiresAt: expiresAt instanceof Date ? expiresAt.toISOString() : expiresAt || null,
   });
 }
 
-async function removePeer({ server, publicKey }) {
-  return call(server, 'DELETE', '/peers', { publicKey });
+async function removeCredential({ server, username }) {
+  return call(server, 'DELETE', '/credentials', { username });
 }
 
-module.exports = { addPeer, removePeer };
+/** Pull the RADIUS accounting snapshot for the usage poller. */
+async function fetchAccounting({ server }) {
+  const data = await call(server, 'GET', '/accounting', null);
+  return Array.isArray(data.sessions) ? data.sessions : [];
+}
+
+module.exports = { addCredential, removeCredential, fetchAccounting };

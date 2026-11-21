@@ -5,8 +5,8 @@ const { query } = require('../db/pool');
 const provisioner = require('./provisioner');
 
 /**
- * IKEv2 session lifecycle — the IKEv2 analogue of the WireGuard peer logic in
- * routes/sessions.js. Each connect mints a short-lived EAP-MSCHAPv2 credential,
+ * IKEv2 session lifecycle (used by routes/sessions.js). Each connect mints a
+ * short-lived EAP-MSCHAPv2 credential,
  * provisions it onto the node's RADIUS, and records an `ikev2_sessions` row. The
  * credential TTL is the connect-gate (docs/IKEV2-MIGRATION.md §6).
  */
@@ -37,11 +37,11 @@ function hashPassword(password) {
  * Create an IKEv2 session for a device on a server: insert the row, provision
  * the credential on the node, and return what the client needs to connect.
  * Rolls back the row if the node can't be programmed, so no orphan credential
- * is left behind (mirrors the WireGuard freshly-allocated rollback).
+ * is left behind.
  *
  * @param {object} args
  * @param {object} args.device          device row
- * @param {object} args.server          server row (protocol='ikev2')
+ * @param {object} args.server          server row (provisioner 'ikev2' | 'mock')
  * @param {number|null} args.remainingBytes  device's remaining allowance (null=unlimited)
  * @returns {Promise<{ session: object, eap: {username,password}, expiresAt: Date }>}
  */
@@ -93,7 +93,7 @@ function toClientPayload({ server, eap, expiresAt, quota }) {
   return {
     protocol: 'ikev2',
     server: {
-      // IKEv2 uses the HOST only (UDP 500/4500); no :port like WireGuard.
+      // IKEv2 uses the HOST only (UDP 500/4500); no :port.
       host: server.endpoint,
       remoteID: server.ike_remote_id || server.endpoint,
       caCert: server.ca_cert || null, // null => client must already trust it (bundled)

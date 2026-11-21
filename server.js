@@ -18,7 +18,6 @@ const sessionsRoutes = require('./routes/sessions');
 const devicesRoutes = require('./routes/devices');
 const usageRoutes = require('./routes/usage');
 const configRoutes = require('./routes/config');
-const internalRoutes = require('./routes/internal');
 
 const PORT = process.env.PORT || 3000;
 const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
@@ -32,9 +31,6 @@ app.use(express.json());
 // ----- Health check (unauthenticated, for Render) ---------------------------
 app.get('/', (_req, res) => res.json({ status: 'ok', service: 'vpn-master-backend' }));
 app.get('/health', (_req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
-
-// ----- Internal (node agents; X-Node-Secret, NOT the app key) ---------------
-app.use('/internal', internalRoutes);
 
 // ----- Public v1 API (X-API-Key on every route; device token optional) ------
 const v1 = express.Router();

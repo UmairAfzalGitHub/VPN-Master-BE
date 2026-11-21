@@ -33,7 +33,7 @@ function premiumPlan() {
   return plan;
 }
 
-/** Default DNS handed to peers that connect to a node without its own resolver. */
+/** Default DNS for clients when a node doesn't push its own resolver. */
 function defaultDns() {
   const raw = process.env.DEFAULT_DNS;
   if (raw) return raw.split(',').map((s) => s.trim()).filter(Boolean);

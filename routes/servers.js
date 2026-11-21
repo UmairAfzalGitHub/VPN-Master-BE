@@ -14,19 +14,19 @@ function toClient(row) {
     country: row.country,
     countryCode: row.country_code,
     city: row.city || null,
+    // The node HOSTNAME (IKE uses UDP 500/4500, so no port). Catalog metadata
+    // only; the app gets the connect coordinates from POST /v1/sessions.
     endpoint: row.endpoint,
-    publicKey: row.public_key,
-    // Tunnel protocol the client should use for this server: 'wireguard' or
-    // 'ikev2'. Lets a mixed fleet roll out IKEv2 node-by-node.
-    protocol: row.protocol || 'wireguard',
+    // Legacy field from the WireGuard days (the server's public key). Existing
+    // client builds still decode it as a REQUIRED string, so keep sending it
+    // (always empty) until they drop it.
+    publicKey: '',
     load: row.load == null ? null : Number(row.load),
     isPremium: row.is_premium,
     // A server is connectable only when it's backed by a real node agent.
     // Placeholder/seed servers (provisioner='mock') report false so the client
-    // can show them as "Coming soon" instead of letting the user connect. Both
-    // the WireGuard agent ('agent') and the IKEv2 agent ('ikev2') count as real.
-    available:
-      row.enabled && (row.provisioner === 'agent' || row.provisioner === 'ikev2') && !!row.agent_url,
+    // can show them as "Coming soon" instead of letting the user connect.
+    available: row.enabled && row.provisioner === 'ikev2' && !!row.agent_url,
   };
 }
 

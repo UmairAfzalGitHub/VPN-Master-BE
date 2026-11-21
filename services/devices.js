@@ -1,6 +1,5 @@
 'use strict';
 
-const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { query } = require('../db/pool');
 
@@ -63,35 +62,6 @@ async function touch(id) {
 }
 
 /**
- * Resolve the device behind a /sessions or /usage call, in priority order:
- *   1. a valid `Authorization: Bearer <deviceToken>` (req.device, set by
- *      middleware) — the correct, spoof-resistant path;
- *   2. an existing peer that already uses this WireGuard public key;
- *   3. otherwise lazily create a new anonymous device keyed to this pubkey.
- *
- * (2)/(3) keep TODAY's client working (it sends only serverID + publicKey and
- * no token yet). Adopting device tokens — BACKEND.md section 2.4 — closes the
- * "new keypair = fresh quota" gap.
- *
- * @param {object} req      express request (may carry req.device)
- * @param {string} publicKey  the client wg public key from the body
- */
-async function resolveForSession(req, publicKey) {
-  if (req.device && req.device.id) {
-    const d = await getById(req.device.id);
-    if (d) return d;
-  }
-
-  const existing = await query(
-    'SELECT d.* FROM devices d JOIN peers p ON p.device_id = d.id WHERE p.public_key = $1 LIMIT 1',
-    [publicKey],
-  );
-  if (existing.rows.length) return existing.rows[0];
-
-  return registerDevice({});
-}
-
-/**
  * Set (or clear) a device's premium entitlement. Used by the dev-only
  * "unlimited data" toggle; clears any expiry so premium is open-ended while on.
  * Returns the updated device row, or null if the id is unknown.
@@ -123,11 +93,6 @@ async function setQuotaOverride(id, bytes) {
   return rows[0] || null;
 }
 
-/** 32 random bytes, base64 — a valid WireGuard preshared key. */
-function generatePresharedKey() {
-  return crypto.randomBytes(32).toString('base64');
-}
-
 module.exports = {
   JWT_SECRET,
   signDeviceToken,
@@ -137,6 +102,4 @@ module.exports = {
   touch,
   setPremium,
   setQuotaOverride,
-  resolveForSession,
-  generatePresharedKey,
 };

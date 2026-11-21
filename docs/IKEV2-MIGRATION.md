@@ -12,7 +12,25 @@ clients, so neither app ships a third-party tunnel:
 This touches all three repos: `VPN-Master-BE` (control plane + node agent),
 `PeakVPN` (iOS), `PeakVPN-Android`. Each gets its own `feat/ikev2` branch.
 
-> Status: DRAFT / proposal. Nothing below is implemented yet.
+> **Status: DONE (2026-11-21) — kept as a historical decision record.** The migration was
+> carried out and WireGuard has been removed everywhere (backend migration 014, both apps).
+> The sections below are the *original plan*; for how things work now read
+> [`ARCHITECTURE.md`](ARCHITECTURE.md), [`BACKEND.md`](BACKEND.md) and
+> [`RUNBOOK-add-server.md`](RUNBOOK-add-server.md).
+>
+> ## Outcome — where reality differed from the plan
+>
+> | Plan said | What we built |
+> |---|---|
+> | Open question: one internal CA bundled in the apps, or public certs | **Publicly trusted Let's Encrypt certs, one per node hostname.** Both apps validate against system trust; nothing is bundled. Nodes need a DNS name (`lon.outposttechnologies.co`) and the cert chain's **three intermediates** must be sent. |
+> | §4 option 1: RADIUS accounting + CoA | **Built, plus a node-side sweep.** strongSwan `eap-radius` accounting every 15 s → FreeRADIUS `radacct`; the node agent drops a credential at its `remainingBytes`/`expiresAt` and sends a RADIUS Disconnect (the DAE listener is in strongSwan); the control plane's poller revokes as a backstop. Enforcement is *near*, not instant: a fast session can overshoot a cap by ~speed × 20 s. |
+> | §6 connect-gate = short-lived credential (~2 min) | **Weak today:** TTL defaults to 24 h, because a short TTL would disconnect live sessions (the sweep and reaper disconnect on expiry). Splitting "gate for new connects" from "session lifetime" is still open. |
+> | §9 coexistence rollout, region by region | **Not needed** — no users yet — so the `servers.protocol` column was dropped and WireGuard deleted outright (migration 014). Unconverted nodes are parked as "coming soon". |
+> | Nodes: strongSwan + RADIUS on the existing droplets | They don't fit in 512 MB — **nodes need 1 GB RAM**. London was resized in place. |
+> | §5.3 agent `/credentials` + `/accounting` | As planned; fixed to work on a stock FreeRADIUS schema (no unique index on `radcheck`). |
+>
+> Still open: IPv6 for clients, an exact per-IP byte cap, `radacct` pruning, and converting
+> Frankfurt / Singapore / New York.
 
 ---
 
